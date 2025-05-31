@@ -22,13 +22,8 @@ end
 ```
 
 2. **Add to your application's supervision tree:**
-```elixir
-# In your application.ex
-children = [
-  # ... your other children
-  {ScenicMcp.Server, port: 9999}
-]
-```
+
+actually you shouldn't need to do this...
 
 3. **Install Node.js dependencies:**
 ```bash
