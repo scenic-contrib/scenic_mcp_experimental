@@ -1,150 +1,156 @@
-# Scenic MCP
+# Scenic MCP - Input Control for Scenic Applications
 
-MCP (Model Context Protocol) server for Scenic Elixir applications. This enables AI-driven automation and testing of any Scenic app.
+A Model Context Protocol (MCP) server that enables external keyboard and mouse input injection into Scenic GUI applications.
 
-## Architecture
+## Features
 
-This project consists of two parts:
-1. **Elixir Library** - A TCP server that runs inside your Scenic app
-2. **MCP Server** - A TypeScript/Node.js server that implements the MCP protocol
+- **Keyboard Input**: Send text and special keys to Scenic applications
+- **Mouse Control**: Move cursor and click at specific coordinates
+- **MCP Integration**: Works with any MCP-compatible client (Claude Desktop, etc.)
+- **Real-time Communication**: TCP-based connection for low-latency input
+- **Scenic Compatible**: Uses proper Scenic ViewPort input routing
 
-```
-Your Scenic App (Elixir)
-    ↓ adds dependency
-scenic_mcp (Elixir TCP Server on port 9999)
-    ↓ TCP connection
-scenic-mcp (TypeScript MCP Server)
-    ↓ MCP protocol
-AI Assistant (Claude, Cline, etc.)
-```
+## Installation
 
-## Quick Start
-
-### 1. Add to your Scenic app
-
-Add `scenic_mcp` to your dependencies in `mix.exs`:
-
+1. **Add to your Scenic application's `mix.exs`:**
 ```elixir
 defp deps do
   [
-    {:scenic, "~> 0.11"},
-    {:scenic_mcp, path: "../scenic_mcp"}  # or from hex/git when published
+    {:scenic_mcp, path: "../scenic_mcp"}
   ]
 end
 ```
 
-The TCP server will automatically start when your app starts.
+2. **Add to your application's supervision tree:**
+```elixir
+# In your application.ex
+children = [
+  # ... your other children
+  {ScenicMcp.Server, port: 9999}
+]
+```
 
-### 2. Install the MCP server
-
-For development (from this repo):
+3. **Install Node.js dependencies:**
 ```bash
 cd scenic_mcp
 npm install
-npm run build
 ```
 
-For end users (when published):
-```bash
-npm install -g @scenic/mcp-server
-```
+## Usage
 
-### 3. Configure your MCP client
+### MCP Tools
 
-Add to your MCP client configuration (e.g., Claude Desktop, Cline):
+The server provides these MCP tools:
 
+#### `connect_scenic`
+Test connection to the Scenic application.
+
+#### `get_scenic_status` 
+Check server status and available commands.
+
+#### `send_keys`
+Send keyboard input to the Scenic application.
+
+**Parameters:**
+- `text` (string): Text to type (each character sent as individual key press)
+- `key` (string): Special key name (enter, escape, tab, backspace, delete, up, down, left, right, home, end, page_up, page_down, f1-f12)
+- `modifiers` (array): Modifier keys (ctrl, shift, alt, cmd, meta)
+
+#### `send_mouse_move`
+Move mouse cursor to specific coordinates.
+
+**Parameters:**
+- `x` (number): X coordinate
+- `y` (number): Y coordinate
+
+#### `send_mouse_click`
+Click mouse at specific coordinates.
+
+**Parameters:**
+- `x` (number): X coordinate
+- `y` (number): Y coordinate
+- `button` (string): Mouse button (left, right, middle) - default: left
+
+### Examples
+
+**Send text:**
 ```json
 {
-  "mcpServers": {
-    "scenic": {
-      "command": "node",
-      "args": ["/path/to/scenic_mcp/dist/index.js"]
-    }
-  }
+  "action": "send_keys",
+  "text": "hello world"
 }
 ```
 
-Or if installed globally:
+**Send special key:**
 ```json
 {
-  "mcpServers": {
-    "scenic": {
-      "command": "scenic-mcp"
-    }
-  }
+  "action": "send_keys", 
+  "key": "enter"
 }
 ```
 
-## Testing
-
-### Test the Elixir TCP server:
-
-```bash
-# Start your Scenic app with scenic_mcp
-cd your_scenic_app
-iex -S mix
-
-# In another terminal, test the TCP connection
-echo "hello" | nc localhost 9999
+**Send key with modifiers:**
+```json
+{
+  "action": "send_keys",
+  "key": "c",
+  "modifiers": ["ctrl"]
+}
 ```
 
-You should see a JSON response with Elixir system info.
+**Move mouse:**
+```json
+{
+  "action": "send_mouse_move",
+  "x": 100,
+  "y": 200
+}
+```
 
-### Test the MCP integration:
+**Click mouse:**
+```json
+{
+  "action": "send_mouse_click",
+  "x": 150,
+  "y": 250,
+  "button": "left"
+}
+```
 
-1. Start your Scenic app
-2. Make sure the MCP server is configured in your client
-3. Use the `hello_scenic` tool to test the connection
+## Architecture
+
+```
+MCP Client (Claude Desktop)
+    ↓
+TypeScript MCP Server (scenic_mcp)
+    ↓ (TCP port 9999)
+Elixir GenServer Bridge
+    ↓ (Scenic.ViewPort.Input.send/2)
+Scenic ViewPort
+    ↓
+Your Scenic Application
+```
 
 ## Development
 
-### Project Structure
-
-```
-scenic_mcp/
-├── lib/                    # Elixir source
-│   ├── scenic_mcp.ex
-│   └── scenic_mcp/
-│       ├── application.ex
-│       └── server.ex
-├── src/                    # TypeScript source
-│   └── index.ts
-├── dist/                   # Compiled JavaScript
-├── mix.exs                 # Elixir package
-└── package.json            # Node package
-```
-
-### Building
-
+**Start the Elixir server:**
 ```bash
-# Install Elixir deps
-mix deps.get
-
-# Install Node deps
-npm install
-
-# Build TypeScript
-npm run build
-
-# Bundle for local dev
-npm run bundle
+cd your_scenic_app
+mix run --no-halt
 ```
 
-## Current Features
+**Test the MCP server:**
+```bash
+cd scenic_mcp
+node src/index.ts
+```
 
-- ✅ Basic TCP server in Elixir
-- ✅ MCP server in TypeScript
-- ✅ Hello world communication test
+## Requirements
 
-## Roadmap
-
-- [ ] Viewport discovery and management
-- [ ] Input injection (click, type, etc.)
-- [ ] Screenshot capture
-- [ ] Scene navigation
-- [ ] Element inspection
-- [ ] Custom app-specific tools
+- Elixir/OTP 24+
+- Node.js 18+
+- Scenic 0.11+
 
 ## License
 
-MIT
+MIT License

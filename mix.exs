@@ -4,7 +4,7 @@ defmodule ScenicMcp.MixProject do
   def project do
     [
       app: :scenic_mcp,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -22,7 +22,8 @@ defmodule ScenicMcp.MixProject do
 
   defp deps do
     [
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:scenic, "~> 0.11"}
     ]
   end
 
