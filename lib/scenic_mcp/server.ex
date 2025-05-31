@@ -110,14 +110,14 @@ defmodule ScenicMcp.Server do
     if viewport do
       modifiers = parse_modifiers(command["modifiers"] || [])
       
-      Logger.info("🔧 DEBUG: Sending text '#{text}' to viewport #{inspect(viewport)}")
+      Logger.info("Sending text '#{text}' to viewport #{inspect(viewport)}")
       
       # Send each character as a key event
       String.graphemes(text)
       |> Enum.each(fn char ->
         key_atom = normalize_key_name(char)
         key_event = {:key, {key_atom, 1, modifiers}}  # 1 = key_pressed
-        Logger.info("🔧 DEBUG: Sending key event: #{inspect(key_event)}")
+        Logger.debug("Sending key event: #{inspect(key_event)}")
         send_input_to_viewport(viewport, key_event)
         
         # Small delay between keystrokes for better reliability
@@ -138,8 +138,8 @@ defmodule ScenicMcp.Server do
       key_atom = normalize_key_name(key)
       
       key_event = {:key, {key_atom, 1, modifiers}}  # 1 = key_pressed
-      Logger.info("🔧 DEBUG: Sending single key '#{key}' as #{inspect(key_atom)} to viewport #{inspect(viewport)}")
-      Logger.info("🔧 DEBUG: Key event format: #{inspect(key_event)}")
+      Logger.info("Sending key '#{key}' as #{inspect(key_atom)} to viewport #{inspect(viewport)}")
+      Logger.debug("Key event format: #{inspect(key_event)}")
       
       send_input_to_viewport(viewport, key_event)
       
@@ -158,8 +158,8 @@ defmodule ScenicMcp.Server do
     
     if viewport do
       mouse_event = {:cursor_pos, {x, y}}
-      Logger.info("🔧 DEBUG: Sending mouse move to (#{x}, #{y}) to viewport #{inspect(viewport)}")
-      Logger.info("🔧 DEBUG: Mouse event format: #{inspect(mouse_event)}")
+      Logger.info("Sending mouse move to (#{x}, #{y}) to viewport #{inspect(viewport)}")
+      Logger.debug("Mouse event format: #{inspect(mouse_event)}")
       
       send_input_to_viewport(viewport, mouse_event)
       
@@ -183,9 +183,9 @@ defmodule ScenicMcp.Server do
       mouse_move = {:cursor_pos, {x, y}}
       mouse_click = {:cursor_button, {button, 1, []}}  # 1 = pressed
       
-      Logger.info("🔧 DEBUG: Sending mouse click at (#{x}, #{y}) with #{button} button")
-      Logger.info("🔧 DEBUG: Mouse move event: #{inspect(mouse_move)}")
-      Logger.info("🔧 DEBUG: Mouse click event: #{inspect(mouse_click)}")
+      Logger.info("Sending mouse click at (#{x}, #{y}) with #{button} button")
+      Logger.debug("Mouse move event: #{inspect(mouse_move)}")
+      Logger.debug("Mouse click event: #{inspect(mouse_click)}")
       
       send_input_to_viewport(viewport, mouse_move)
       Process.sleep(10)  # Small delay
@@ -345,7 +345,7 @@ defmodule ScenicMcp.Server do
 
   # Generic input sending that works with any Scenic viewport
   defp send_input_to_viewport(viewport_pid, event) when is_pid(viewport_pid) do
-    Logger.info("🎯 Injecting input event via ViewPort: #{inspect(event)}")
+    Logger.debug("Injecting input event via ViewPort: #{inspect(event)}")
     
     # Use proper Scenic ViewPort input routing
     send_via_viewport(viewport_pid, event)
@@ -362,7 +362,7 @@ defmodule ScenicMcp.Server do
       # Validate the event format first
       case Scenic.ViewPort.Input.validate(event) do
         :ok ->
-          Logger.info("🔧 DEBUG: Event validation passed: #{inspect(event)}")
+          Logger.debug("Event validation passed: #{inspect(event)}")
           
           # Create a ViewPort struct
           viewport = %Scenic.ViewPort{pid: viewport_pid}

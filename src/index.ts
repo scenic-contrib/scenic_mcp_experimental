@@ -68,7 +68,6 @@ async function attemptSendToElixir(command: any): Promise<string> {
     }, 5000);
     
     client.connect(9999, 'localhost', () => {
-      console.error('[Scenic MCP] Connected to TCP server');
       const message = typeof command === 'string' ? command : JSON.stringify(command);
       client.write(message + '\n');
     });
