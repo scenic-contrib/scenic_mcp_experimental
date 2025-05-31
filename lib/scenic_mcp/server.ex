@@ -80,7 +80,11 @@ defmodule ScenicMcp.Server do
       {:ok, %{"action" => "send_keys"} = command} ->
         handle_send_keys(command)
       
-
+      {:ok, %{"action" => "send_mouse_move"} = command} ->
+        handle_mouse_move(command)
+      
+      {:ok, %{"action" => "send_mouse_click"} = command} ->
+        handle_mouse_click(command)
       
       {:ok, command} ->
         %{error: "Unknown command", command: command}
@@ -95,7 +99,7 @@ defmodule ScenicMcp.Server do
     %{
       status: "active",
       scenic_viewports: list_scenic_viewports(),
-      available_commands: ["send_keys"],
+      available_commands: ["send_keys", "send_mouse_move", "send_mouse_click"],
       time: DateTime.utc_now() |> DateTime.to_iso8601()
     }
   end
@@ -149,7 +153,63 @@ defmodule ScenicMcp.Server do
     %{error: "Invalid send_keys command - must provide either 'text' or 'key'"}
   end
 
+  defp handle_mouse_move(%{"x" => x, "y" => y}) do
+    viewport = find_scenic_viewport()
+    
+    if viewport do
+      mouse_event = {:cursor_pos, {x, y}}
+      Logger.info("🔧 DEBUG: Sending mouse move to (#{x}, #{y}) to viewport #{inspect(viewport)}")
+      Logger.info("🔧 DEBUG: Mouse event format: #{inspect(mouse_event)}")
+      
+      send_input_to_viewport(viewport, mouse_event)
+      
+      %{status: "ok", message: "Mouse moved to (#{x}, #{y})", viewport: inspect(viewport)}
+    else
+      %{error: "No Scenic viewport found", available_viewports: list_scenic_viewports()}
+    end
+  end
 
+  defp handle_mouse_move(_command) do
+    %{error: "Invalid mouse_move command - must provide 'x' and 'y' coordinates"}
+  end
+
+  defp handle_mouse_click(%{"x" => x, "y" => y} = command) do
+    viewport = find_scenic_viewport()
+    
+    if viewport do
+      button = normalize_button_name(command["button"] || "left")
+      
+      # Send mouse move first, then click
+      mouse_move = {:cursor_pos, {x, y}}
+      mouse_click = {:cursor_button, {button, 1, []}}  # 1 = pressed
+      
+      Logger.info("🔧 DEBUG: Sending mouse click at (#{x}, #{y}) with #{button} button")
+      Logger.info("🔧 DEBUG: Mouse move event: #{inspect(mouse_move)}")
+      Logger.info("🔧 DEBUG: Mouse click event: #{inspect(mouse_click)}")
+      
+      send_input_to_viewport(viewport, mouse_move)
+      Process.sleep(10)  # Small delay
+      send_input_to_viewport(viewport, mouse_click)
+      
+      %{status: "ok", message: "Mouse clicked at (#{x}, #{y}) with #{button} button", viewport: inspect(viewport)}
+    else
+      %{error: "No Scenic viewport found", available_viewports: list_scenic_viewports()}
+    end
+  end
+
+  defp handle_mouse_click(_command) do
+    %{error: "Invalid mouse_click command - must provide 'x' and 'y' coordinates"}
+  end
+
+  # Normalize button names
+  defp normalize_button_name(button) do
+    case String.downcase(button) do
+      "left" -> :cursor_button_left
+      "right" -> :cursor_button_right
+      "middle" -> :cursor_button_middle
+      other -> String.to_atom("cursor_button_" <> other)
+    end
+  end
 
   # Normalize key names to match Scenic's expectations
   defp normalize_key_name(key) do

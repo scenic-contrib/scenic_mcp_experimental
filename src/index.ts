@@ -145,6 +145,48 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      {
+        name: 'send_mouse_move',
+        description: 'Move mouse cursor to specific coordinates',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            x: {
+              type: 'number',
+              description: 'X coordinate',
+            },
+            y: {
+              type: 'number',
+              description: 'Y coordinate',
+            },
+          },
+          required: ['x', 'y'],
+        },
+      },
+      {
+        name: 'send_mouse_click',
+        description: 'Click mouse at specific coordinates',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            x: {
+              type: 'number',
+              description: 'X coordinate',
+            },
+            y: {
+              type: 'number',
+              description: 'Y coordinate',
+            },
+            button: {
+              type: 'string',
+              enum: ['left', 'right', 'middle'],
+              description: 'Mouse button to click (default: left)',
+              default: 'left',
+            },
+          },
+          required: ['x', 'y'],
+        },
+      },
 
     ],
   };
@@ -308,7 +350,124 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
+    case 'send_mouse_move': {
+      try {
+        const isRunning = await checkTCPServer();
+        if (!isRunning) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Cannot send mouse move: Scenic TCP server is not running.',
+              },
+            ],
+            isError: true,
+          };
+        }
 
+        const { x, y } = request.params.arguments as any;
+        
+        const command = {
+          action: 'send_mouse_move',
+          x,
+          y,
+        };
+        
+        const response = await sendToElixir(command);
+        const data = JSON.parse(response);
+        
+        if (data.error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error moving mouse: ${data.error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Mouse moved to (${x}, ${y})`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error moving mouse: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+
+    case 'send_mouse_click': {
+      try {
+        const isRunning = await checkTCPServer();
+        if (!isRunning) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Cannot send mouse click: Scenic TCP server is not running.',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const { x, y, button = 'left' } = request.params.arguments as any;
+        
+        const command = {
+          action: 'send_mouse_click',
+          x,
+          y,
+          button,
+        };
+        
+        const response = await sendToElixir(command);
+        const data = JSON.parse(response);
+        
+        if (data.error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error clicking mouse: ${data.error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Mouse clicked at (${x}, ${y}) with ${button} button`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error clicking mouse: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
 
     default:
       throw new Error(`Unknown tool: ${name}`);

@@ -1,10 +1,11 @@
-# Scenic MCP - Keyboard Input for Scenic Applications
+# Scenic MCP - Input Control for Scenic Applications
 
-A Model Context Protocol (MCP) server that enables external keyboard input injection into Scenic GUI applications.
+A Model Context Protocol (MCP) server that enables external keyboard and mouse input injection into Scenic GUI applications.
 
 ## Features
 
 - **Keyboard Input**: Send text and special keys to Scenic applications
+- **Mouse Control**: Move cursor and click at specific coordinates
 - **MCP Integration**: Works with any MCP-compatible client (Claude Desktop, etc.)
 - **Real-time Communication**: TCP-based connection for low-latency input
 - **Scenic Compatible**: Uses proper Scenic ViewPort input routing
@@ -55,6 +56,21 @@ Send keyboard input to the Scenic application.
 - `key` (string): Special key name (enter, escape, tab, backspace, delete, up, down, left, right, home, end, page_up, page_down, f1-f12)
 - `modifiers` (array): Modifier keys (ctrl, shift, alt, cmd, meta)
 
+#### `send_mouse_move`
+Move mouse cursor to specific coordinates.
+
+**Parameters:**
+- `x` (number): X coordinate
+- `y` (number): Y coordinate
+
+#### `send_mouse_click`
+Click mouse at specific coordinates.
+
+**Parameters:**
+- `x` (number): X coordinate
+- `y` (number): Y coordinate
+- `button` (string): Mouse button (left, right, middle) - default: left
+
 ### Examples
 
 **Send text:**
@@ -79,6 +95,25 @@ Send keyboard input to the Scenic application.
   "action": "send_keys",
   "key": "c",
   "modifiers": ["ctrl"]
+}
+```
+
+**Move mouse:**
+```json
+{
+  "action": "send_mouse_move",
+  "x": 100,
+  "y": 200
+}
+```
+
+**Click mouse:**
+```json
+{
+  "action": "send_mouse_click",
+  "x": 150,
+  "y": 250,
+  "button": "left"
 }
 ```
 
