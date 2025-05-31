@@ -22,7 +22,8 @@ defmodule ScenicMcp.MixProject do
 
   defp deps do
     [
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:scenic, "~> 0.11"}
     ]
   end
 

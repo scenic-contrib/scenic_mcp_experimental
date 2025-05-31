@@ -110,11 +110,14 @@ defmodule ScenicMcp.Server do
     if viewport do
       modifiers = parse_modifiers(command["modifiers"] || [])
       
+      Logger.info("🔧 DEBUG: Sending text '#{text}' to viewport #{inspect(viewport)}")
+      
       # Send each character as a key event
       String.graphemes(text)
       |> Enum.each(fn char ->
         key_atom = normalize_key_name(char)
         key_event = {:key, {key_atom, 1, modifiers}}  # 1 = key_pressed
+        Logger.info("🔧 DEBUG: Sending key event: #{inspect(key_event)}")
         send_input_to_viewport(viewport, key_event)
         
         # Small delay between keystrokes for better reliability
@@ -135,6 +138,9 @@ defmodule ScenicMcp.Server do
       key_atom = normalize_key_name(key)
       
       key_event = {:key, {key_atom, 1, modifiers}}  # 1 = key_pressed
+      Logger.info("🔧 DEBUG: Sending single key '#{key}' as #{inspect(key_atom)} to viewport #{inspect(viewport)}")
+      Logger.info("🔧 DEBUG: Key event format: #{inspect(key_event)}")
+      
       send_input_to_viewport(viewport, key_event)
       
       %{status: "ok", message: "Sent key: #{key}", key_atom: key_atom, viewport: inspect(viewport)}
@@ -348,20 +354,31 @@ defmodule ScenicMcp.Server do
   # Send event via Scenic.ViewPort.Input.send/2 - the proper Scenic input channel
   defp send_via_viewport(viewport_pid, event) do
     try do
-      # Create a ViewPort struct
-      viewport = %Scenic.ViewPort{pid: viewport_pid}
-      
-      case Scenic.ViewPort.Input.send(viewport, event) do
+      # Validate the event format first
+      case Scenic.ViewPort.Input.validate(event) do
         :ok ->
-          Logger.info("✅ Sent event via ViewPort.Input.send: #{inspect(event)}")
-          :ok
-        {:error, reason} ->
-          Logger.error("❌ ViewPort rejected input: #{inspect(reason)} for event: #{inspect(event)}")
-          {:error, reason}
+          Logger.info("🔧 DEBUG: Event validation passed: #{inspect(event)}")
+          
+          # Create a ViewPort struct
+          viewport = %Scenic.ViewPort{pid: viewport_pid}
+          
+          case Scenic.ViewPort.Input.send(viewport, event) do
+            :ok ->
+              Logger.info("✅ Successfully sent event via ViewPort.Input.send: #{inspect(event)}")
+              :ok
+            {:error, reason} ->
+              Logger.error("❌ ViewPort rejected input: #{inspect(reason)} for event: #{inspect(event)}")
+              {:error, reason}
+          end
+          
+        {:error, :invalid} ->
+          Logger.error("❌ Event validation FAILED: #{inspect(event)} is not a valid Scenic input format")
+          {:error, :invalid_format}
       end
     rescue
       e ->
-        Logger.error("❌ Failed to send input via ViewPort: #{inspect(e)}")
+        Logger.error("❌ Exception while sending input via ViewPort: #{inspect(e)}")
+        Logger.error("❌ Event that caused exception: #{inspect(event)}")
         {:error, e}
     end
   end
