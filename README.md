@@ -6,6 +6,7 @@ A Model Context Protocol (MCP) server that enables external keyboard and mouse i
 
 - **Keyboard Input**: Send text and special keys to Scenic applications
 - **Mouse Control**: Move cursor and click at specific coordinates
+- **Visual Feedback**: Get descriptions of what's displayed on screen (v0.2.0)
 - **MCP Integration**: Works with any MCP-compatible client (Claude Desktop, etc.)
 - **Real-time Communication**: TCP-based connection for low-latency input
 - **Scenic Compatible**: Uses proper Scenic ViewPort input routing
@@ -66,6 +67,9 @@ Click mouse at specific coordinates.
 - `y` (number): Y coordinate
 - `button` (string): Mouse button (left, right, middle) - default: left
 
+#### `get_scenic_graph` (NEW in v0.2.0)
+Return the script table for a ViewPort.
+
 ### Examples
 
 **Send text:**
@@ -109,6 +113,13 @@ Click mouse at specific coordinates.
   "x": 150,
   "y": 250,
   "button": "left"
+}
+```
+
+**Get visual feedback:**
+```json
+{
+  "action": "get_scenic_graph"
 }
 ```
 

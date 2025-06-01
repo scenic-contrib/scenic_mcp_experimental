@@ -186,7 +186,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['x', 'y'],
         },
       },
-
+      {
+        name: 'inspect_viewport',
+        description: 'Inspect the Scenic viewport to see what\'s currently displayed',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
     ],
   };
 });
@@ -461,6 +468,61 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Error clicking mouse: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+
+    case 'inspect_viewport': {
+      try {
+        const isRunning = await checkTCPServer();
+        if (!isRunning) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Cannot inspect viewport: Scenic TCP server is not running.',
+              },
+            ],
+            isError: true,
+          };
+        }
+        
+        const command = {
+          action: 'get_scenic_graph',
+        };
+        
+        const response = await sendToElixir(command);
+        const data = JSON.parse(response);
+        
+        if (data.error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error inspecting viewport: ${data.error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: data.description || 'No viewport information available',
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error inspecting viewport: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
           isError: true,
