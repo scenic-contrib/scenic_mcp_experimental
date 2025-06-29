@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server that enables external keyboard and mouse input injection into Scenic GUI applications.
 
+<a href="https://glama.ai/mcp/servers/@scenic-contrib/scenic_mcp_experimental">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@scenic-contrib/scenic_mcp_experimental/badge" alt="Scenic MCP server" />
+</a>
+
 ## Features
 
 - **Keyboard Input**: Send text and special keys to Scenic applications
