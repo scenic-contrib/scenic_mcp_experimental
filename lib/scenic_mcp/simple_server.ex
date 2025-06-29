@@ -108,6 +108,11 @@ defmodule ScenicMcp.SimpleServer do
       {:ok, %{"action" => "send_mouse_click"} = command} ->
         handle_mouse_click(command)
       
+      {:ok, %{"action" => "take_screenshot"} = command} ->
+        handle_take_screenshot(command)
+      
+      # Process management now handled by TypeScript MCP server
+      
       {:ok, command} ->
         %{error: "Unknown command", command: command}
       
@@ -371,28 +376,195 @@ defmodule ScenicMcp.SimpleServer do
     end
   end
 
+  # Screenshot functionality
+  defp handle_take_screenshot(params) do
+    Logger.info("Handling screenshot request: #{inspect(params)}")
+    
+    # Get optional parameters
+    format = Map.get(params, "format", "path")  # "path" or "base64"
+    filename = Map.get(params, "filename")
+    
+    # Generate filename if not provided
+    path = if filename do
+      if String.ends_with?(filename, ".png") do
+        filename
+      else
+        filename <> ".png"
+      end
+    else
+      timestamp = DateTime.utc_now() |> DateTime.to_string() |> String.replace(~r/[:\s]/, "_")
+      "/tmp/scenic_screenshot_#{timestamp}.png"
+    end
+    
+    # Find viewport and get driver
+    viewport = find_scenic_viewport()
+    
+    if viewport do
+      try do
+        # Get the viewport's state to find drivers
+        state = :sys.get_state(viewport, 5000)
+        Logger.info("Getting driver_pids from viewport state...")
+        
+        # Get driver pids from the viewport state
+        driver_pids = Map.get(state, :driver_pids, [])
+        
+        Logger.info("Final driver_pids: #{inspect(driver_pids)}")
+        
+        if length(driver_pids) > 0 do
+          driver_pid = hd(driver_pids)
+          Logger.info("Using driver_pid: #{inspect(driver_pid)}")
+          
+          # Take the screenshot using the driver
+          Scenic.Driver.Local.screenshot(driver_pid, path)
+          Logger.info("Screenshot saved to: #{path}")
+          
+          # Return response based on format
+          case format do
+            "base64" ->
+              # Read file and encode to base64
+              case File.read(path) do
+                {:ok, data} ->
+                  base64_data = Base.encode64(data)
+                  %{
+                    status: "ok",
+                    format: "base64",
+                    data: base64_data,
+                    path: path,
+                    size: byte_size(data)
+                  }
+                {:error, reason} ->
+                  %{error: "Failed to read screenshot file", reason: inspect(reason)}
+              end
+            
+            _ ->
+              # Just return the path
+              %{
+                status: "ok",
+                format: "path",
+                path: path
+              }
+          end
+        else
+          Logger.error("No driver PIDs found in viewport state")
+          
+          # Try waiting a bit for drivers to register, then retry once
+          Logger.info("Waiting 2 seconds for drivers to register...")
+          :timer.sleep(2000)
+          
+          updated_state = :sys.get_state(viewport, 5000)
+          updated_driver_pids = Map.get(updated_state, :driver_pids, [])
+          Logger.info("After waiting, found driver_pids: #{inspect(updated_driver_pids)}")
+          
+          if length(updated_driver_pids) > 0 do
+            driver_pid = hd(updated_driver_pids)
+            Logger.info("Using driver_pid after wait: #{inspect(driver_pid)}")
+            
+            # Take the screenshot using the driver
+            Scenic.Driver.Local.screenshot(driver_pid, path)
+            Logger.info("Screenshot saved to: #{path}")
+            
+            # Return response based on format
+            case format do
+              "base64" ->
+                # Read file and encode to base64
+                case File.read(path) do
+                  {:ok, data} ->
+                    base64_data = Base.encode64(data)
+                    %{
+                      status: "ok",
+                      format: "base64",
+                      data: base64_data,
+                      path: path,
+                      size: byte_size(data)
+                    }
+                  {:error, reason} ->
+                    %{error: "Failed to read screenshot file", reason: inspect(reason)}
+                end
+              
+              _ ->
+                # Just return the path
+                %{
+                  status: "ok",
+                  format: "path",
+                  path: path
+                }
+            end
+          else
+            %{error: "No driver found in viewport after waiting", viewport_keys: Map.keys(updated_state)}
+          end
+        end
+      rescue
+        e ->
+          error_msg = try do
+            case e do
+              %KeyError{key: key} -> 
+                "KeyError - missing key: #{inspect(key)}"
+              _ -> 
+                "#{Exception.format(:error, e)}"
+            end
+          rescue
+            _ -> "Unknown error occurred"
+          end
+          Logger.error("Screenshot failed: #{error_msg}")
+          %{error: "Screenshot failed", details: error_msg}
+      end
+    else
+      %{error: "No viewport found"}
+    end
+  end
+
+  # Process management now handled by TypeScript MCP server directly
+
   # Find viewport - made public for the API function
   def find_scenic_viewport do
     Logger.info("[DEBUG] Starting viewport search...")
     
-    result = Process.list()
-    |> Enum.find(fn pid ->
-      case Process.info(pid, [:registered_name, :dictionary]) do
-        [{:registered_name, name}, {:dictionary, dict}] when is_atom(name) ->
+    # First try to find by registered name
+    viewport_candidates = Process.list()
+    |> Enum.filter(fn pid ->
+      case Process.info(pid, [:registered_name, :dictionary, :current_function]) do
+        [{:registered_name, name}, {:dictionary, dict}, {:current_function, {mod, _fun, _arity}}] when is_atom(name) ->
           name_str = Atom.to_string(name)
-          is_viewport = String.contains?(name_str, "viewport") or
+          module_str = Atom.to_string(mod)
+          
+          is_viewport = 
+            String.contains?(name_str, "viewport") or
+            String.contains?(module_str, "ViewPort") or
             Enum.any?(dict, fn {k, _} -> 
               String.contains?(to_string(k), "viewport")
             end)
+          
+          if is_viewport do
+            Logger.info("[DEBUG] Found viewport candidate: #{name} (#{inspect(pid)}) - module: #{module_str}")
+          end
+          
+          is_viewport
+        
+        [{:registered_name, name}, _dict] when is_atom(name) ->
+          name_str = Atom.to_string(name)
+          is_viewport = String.contains?(name_str, "viewport")
           
           if is_viewport do
             Logger.info("[DEBUG] Found viewport candidate: #{name} (#{inspect(pid)})")
           end
           
           is_viewport
+        _ -> 
+          false
+      end
+    end)
+    
+    Logger.info("[DEBUG] Found #{length(viewport_candidates)} viewport candidates")
+    
+    # Try to find the main viewport specifically
+    main_viewport = Enum.find(viewport_candidates, fn pid ->
+      case Process.info(pid, [:registered_name]) do
+        [{:registered_name, :main_viewport}] -> true
         _ -> false
       end
     end)
+    
+    result = main_viewport || List.first(viewport_candidates)
     
     Logger.info("[DEBUG] Viewport search result: #{inspect(result)}")
     result
