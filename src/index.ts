@@ -106,7 +106,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'connect_scenic',
-        description: 'Test connection to a Scenic application via TCP server',
+        description: 'CONNECTION SETUP: Establish connection to a running Scenic application. ALWAYS use this first before other tools to ensure the app is reachable. Essential for starting any Scenic interaction session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -120,7 +120,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'get_scenic_status',
-        description: 'Check the status of the Scenic TCP connection',
+        description: 'CONNECTION STATUS: Check current connection status and get detailed information about the Scenic application. Use for troubleshooting connectivity issues and verifying app state.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -129,7 +129,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'send_keys',
-        description: 'Send keyboard input to the connected Scenic application',
+        description: 'KEYBOARD INPUT: Send text input or special keystrokes to the Scenic application. Use for typing text, navigation shortcuts, testing keyboard interactions. Supports text, special keys (enter, escape, tab), and modifier combinations (ctrl+c, cmd+s).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -154,7 +154,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'send_mouse_move',
-        description: 'Move mouse cursor to specific coordinates',
+        description: 'CURSOR MOVEMENT: Move the mouse cursor to specific coordinates. Useful for hover effects, precise positioning before clicking, and testing mouse-over interactions.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -172,7 +172,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'send_mouse_click',
-        description: 'Click mouse at specific coordinates',
+        description: 'MOUSE INTERACTION: Click at specific screen coordinates to interact with buttons, links, and UI elements. Use with inspect_viewport to find clickable elements and their positions. Essential for testing UI interactions.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -196,7 +196,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'inspect_viewport',
-        description: 'Inspect the Scenic viewport to see what\'s currently displayed',
+        description: 'UI ANALYSIS: Get a detailed text-based description of what\'s currently displayed in the Scenic application. Perfect for understanding UI structure, finding clickable elements, and programmatic interface analysis. Use when you need to understand what\'s on screen without taking a screenshot.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -204,7 +204,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'take_screenshot',
-        description: 'Take a screenshot of the current Scenic application',
+        description: 'VISUAL DOCUMENTATION: Capture screenshots of the Scenic application for development progress tracking, debugging UI issues, creating before/after comparisons, and documenting visual changes. Essential for visual development workflows. Use when someone wants to "see how the app looks" or "capture current state".',
         inputSchema: {
           type: 'object',
           properties: {
@@ -223,7 +223,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'start_app',
-        description: 'Start a Scenic application process',
+        description: 'PROCESS MANAGEMENT: Launch a Scenic application from its directory path. Use when you need to start the app before connecting to it. Requires the absolute path to a Scenic application directory containing mix.exs.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -236,7 +236,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'stop_app',
-        description: 'Stop the currently running Scenic application',
+        description: 'PROCESS MANAGEMENT: Stop the currently managed Scenic application process. Use for cleanup, restarting apps, or ending development sessions.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -244,7 +244,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'app_status',
-        description: 'Get the status of the managed Scenic application process',
+        description: 'PROCESS MONITORING: Get status of the managed Scenic application process, including running state and connection info. Essential for debugging process issues and checking if the app is still running.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -252,7 +252,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'get_app_logs',
-        description: 'Get recent logs from the Scenic application',
+        description: 'DEBUGGING: Retrieve recent log output from the Scenic application. Essential for debugging crashes, errors, and understanding app behavior. Use when someone reports "the app crashed" or "something\'s wrong".',
         inputSchema: {
           type: 'object',
           properties: {
