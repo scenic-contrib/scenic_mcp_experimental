@@ -12,7 +12,15 @@
     "dev": "tsc --watch",
     "bundle": "tsc && mkdir -p priv/mcp_server && cp dist/* priv/mcp_server/",
     "prepublishOnly": "npm run build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:elixir": "cd .. && mix test",
+    "test:evals": "tsc && node evals/scenic-mcp-evals.js",
+    "test:all": "npm run test && npm run test:elixir && npm run test:evals",
+    "test:llm-tools": "tsc && node run_llm_tool_tests.js",
+    "test:harness": "tsc && node llm_tool_harness.js",
+    "enhance:descriptions": "tsc && node apply_enhanced_descriptions.js",
+    "enhance:revert": "tsc && node apply_enhanced_descriptions.js revert"
   },
   "keywords": ["mcp", "scenic", "elixir", "automation"],
   "author": "Your Name",
@@ -22,6 +30,9 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/jest": "^29.5.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
     "typescript": "^5.0.0"
   },
   "files": ["dist", "README.md"],

@@ -9,7 +9,17 @@ defmodule ScenicMcp.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: "MCP (Model Context Protocol) server for Scenic applications",
-      package: package()
+      package: package(),
+      
+      # Test configuration
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test,
+        "coveralls.github": :test
+      ]
     ]
   end
 
@@ -25,7 +35,11 @@ defmodule ScenicMcp.MixProject do
       {:jason, "~> 1.4"},
       {:scenic, git: "https://github.com/ScenicFramework/scenic.git", tag: "v0.11.1", override: true},
       # {:scenic_driver_local, path: "../scenic_driver_local"}
-      {:scenic_driver_local, git: "https://github.com/JediLuke/scenic_driver_local", branch: "flamelex_vsn"}
+      {:scenic_driver_local, git: "https://github.com/JediLuke/scenic_driver_local", branch: "flamelex_vsn"},
+      
+      # Test dependencies
+      {:excoveralls, "~> 0.17", only: :test},
+      {:mix_audit, "~> 2.0", only: [:dev, :test], runtime: false}
     ]
   end
 

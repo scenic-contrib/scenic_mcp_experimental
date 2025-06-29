@@ -13,8 +13,10 @@ defmodule ScenicMcp.Server do
     viewport = Process.whereis(:main_viewport) || Process.whereis(:viewport)
     
     # If direct lookup fails, try the search approach
-    if viewport == nil do
-      viewport = find_scenic_viewport()
+    viewport = if viewport == nil do
+      find_scenic_viewport()
+    else
+      viewport
     end
     
     if viewport do
@@ -123,7 +125,7 @@ defmodule ScenicMcp.Server do
 
   defp handle_get_scenic_graph(args) do
     IO.inspect(args, label: "INSIDE GET SCENIC GRAPH")
-    case vp_info = get_viewport_info() do
+    case get_viewport_info() do
       %{has_script_table: true, script_table: vp_script_table} ->
         graph = :ets.tab2list(vp_script_table)
         %{status: "ok", description: inspect(graph), script_count: length(graph)}
@@ -133,177 +135,32 @@ defmodule ScenicMcp.Server do
     end
   end
 
-  defp get_visual_feedback(detail_level) do
-    Logger.info("[DEBUG] get_visual_feedback called with detail_level: #{detail_level}")
-    
-    # Try the direct approach first
-    viewport = Process.whereis(:main_viewport) || Process.whereis(:viewport)
-    Logger.info("[DEBUG] Direct viewport lookup result: #{inspect(viewport)}")
-    
-    # If direct lookup fails, try the search approach
-    if viewport == nil do
-      viewport = find_scenic_viewport()
-      Logger.info("[DEBUG] Search-based viewport lookup result: #{inspect(viewport)}")
-    end
-    
-    if viewport do
-      try do
-        Logger.info("[DEBUG] Getting viewport state...")
-        # Get the viewport's state
-        state = :sys.get_state(viewport, 5000)
-        Logger.info("[DEBUG] Viewport state keys: #{inspect(Map.keys(state))}")
-        
-        # Extract the script table
-        script_table = case state do
-          %{script_table: table} -> 
-            Logger.info("[DEBUG] Found script_table in state: #{inspect(table)}")
-            table
-          _ -> 
-            Logger.warning("[DEBUG] No script_table key in state")
-            nil
-        end
-        
-        if script_table do
-          # Read scripts from the table
-          Logger.info("[DEBUG] Reading scripts from ETS table...")
-          scripts = :ets.tab2list(script_table)
-          Logger.info("[DEBUG] Found #{length(scripts)} scripts")
-          
-          # Log first script for debugging
-          if length(scripts) > 0 do
-            {name, _, _} = hd(scripts)
-            Logger.info("[DEBUG] First script name: #{inspect(name)}")
-          end
-          
-          # Build visual description
-          description = build_visual_description(scripts, detail_level)
-          
-          response = %{
-            status: "ok",
-            description: description,
-            script_count: length(scripts),
-            detail_level: detail_level
-          }
-          
-          Logger.info("[DEBUG] Returning successful response")
-          response
-        else
-          Logger.error("[DEBUG] No script table found in viewport state")
-          %{
-            error: "No script table found in viewport state",
-            viewport_state_keys: Map.keys(state)
-          }
-        end
-      rescue
-        e ->
-          Logger.error("[DEBUG] Exception in get_visual_feedback: #{inspect(e)}")
-          Logger.error("[DEBUG] Stacktrace: #{inspect(__STACKTRACE__)}")
-          %{
-            error: "Failed to get scenic graph",
-            details: inspect(e),
-            stacktrace: inspect(__STACKTRACE__)
-          }
-      end
-    else
-      Logger.error("[DEBUG] No Scenic viewport found at all")
-      %{error: "No Scenic viewport found"}
-    end
-  end
-
-  defp build_visual_description(scripts, detail_level) do
-    # Parse each script and extract visual elements
-    elements = scripts
-    |> Enum.map(fn {name, compiled_script, _owner} ->
-      {name, decode_script(compiled_script)}
-    end)
-    |> Enum.reject(fn {_, decoded} -> decoded == nil end)
-    
-    # Build description
-    parts = ["🖼️ Visual Feedback - What's on screen:\n"]
-    
-    parts = parts ++ Enum.map(elements, fn {name, description} ->
-      "• #{humanize_name(name)}: #{description}"
-    end)
-    
-    parts = parts ++ ["\n📊 Total: #{length(scripts)} visual elements"]
-    
-    Enum.join(parts, "\n")
-  end
-
-  defp decode_script(compiled) when is_binary(compiled) do
-    try do
-      case Scenic.Script.deserialize(compiled) do
-        ops when is_list(ops) ->
-          analyze_operations(ops)
-        _ ->
-          nil
-      end
-    rescue
-      _ -> nil
-    end
-  end
-  defp decode_script(_), do: nil
-
-  defp analyze_operations(ops) do
-    # Extract meaningful visual elements
-    elements = ops
-    |> Enum.reduce(%{texts: [], shapes: [], colors: []}, fn op, acc ->
-      case op do
-        {:draw_text, text} when is_binary(text) ->
-          %{acc | texts: [text | acc.texts]}
-        {:draw_rect, _} ->
-          %{acc | shapes: ["rectangle" | acc.shapes]}
-        {:draw_rrect, _} ->
-          %{acc | shapes: ["rounded rect" | acc.shapes]}
-        {:draw_circle, _} ->
-          %{acc | shapes: ["circle" | acc.shapes]}
-        {:fill_color, {:color_rgba, {r, g, b, _}}} ->
-          color = describe_color(r, g, b)
-          %{acc | colors: [color | acc.colors]}
-        _ ->
-          acc
-      end
-    end)
-    
-    # Build description
-    parts = []
-    
-    if length(elements.texts) > 0 do
-      texts = elements.texts |> Enum.reverse() |> Enum.uniq() |> Enum.take(3)
-      parts ++ ["Text: '#{Enum.join(texts, "', '")}'" ]
-    else
-      if length(elements.shapes) > 0 do
-        shape_counts = elements.shapes |> Enum.frequencies()
-        shapes = Enum.map(shape_counts, fn {shape, count} ->
-          if count > 1, do: "#{count} #{shape}s", else: shape
-        end)
-        parts ++ ["Shapes: #{Enum.join(shapes, ", ")}"]
-      else
-        parts ++ ["#{length(ops)} drawing operations"]
-      end
-    end
-    |> Enum.join(" | ")
-  end
-
-  defp describe_color(r, g, b) do
-    cond do
-      r > 200 && g < 100 && b < 100 -> "red"
-      r < 100 && g > 200 && b < 100 -> "green"
-      r < 100 && g < 100 && b > 200 -> "blue"
-      r == 0 && g == 0 && b == 0 -> "black"
-      r == 255 && g == 255 && b == 255 -> "white"
-      true -> "color"
-    end
-  end
-
-  defp humanize_name(name) do
-    cond do
-      name == "_root_" -> "Root"
-      String.contains?(to_string(name), "Layer") -> "Layer"
-      String.contains?(to_string(name), "Buffer") -> "Text Buffer"
-      true -> to_string(name)
-    end
-  end
+  # Visual feedback functions commented out to avoid warnings
+  # These will be re-enabled when visual feedback is implemented
+  
+  # defp get_visual_feedback(detail_level) do
+  #   # Implementation commented out
+  # end
+  
+  # defp build_visual_description(scripts, detail_level) do
+  #   # Implementation commented out  
+  # end
+  
+  # defp decode_script(compiled) when is_binary(compiled) do
+  #   # Implementation commented out
+  # end
+  
+  # defp analyze_operations(ops) do
+  #   # Implementation commented out
+  # end
+  
+  # defp describe_color(r, g, b) do
+  #   # Implementation commented out
+  # end
+  
+  # defp humanize_name(name) do
+  #   # Implementation commented out
+  # end
 
   # Input handling
   defp handle_send_keys(%{"text" => text}) when is_binary(text) do
