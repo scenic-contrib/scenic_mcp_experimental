@@ -26,13 +26,47 @@ end
 
 actually you shouldn't need to do this...
 
-3. **Install Node.js dependencies:**
+3. **Install Node.js dependencies and build:**
 ```bash
 cd scenic_mcp
 npm install
+npm run build
 ```
 
+4. **Configure for Claude Code:**
+```bash
+# Add the MCP server to Claude Code
+claude mcp add scenic-mcp /path/to/scenic_mcp/dist/index.js
+
+# Verify it was added
+claude mcp list
+```
+
+**Note:** Replace `/path/to/scenic_mcp` with the actual path to your scenic_mcp directory.
+
 ## Usage
+
+### Using with Claude Code
+
+Once configured, you can use the MCP tools directly within Claude Code conversations:
+
+1. **Start your Scenic application** (with the ScenicMcp.Server running on port 9999)
+2. **Use MCP tools in Claude Code:**
+   - `connect_scenic` - Test connection to your Scenic app
+   - `get_scenic_status` - Check connection status
+   - `send_keys` - Send keyboard input
+   - `send_mouse_move` - Move mouse cursor
+   - `send_mouse_click` - Click at coordinates
+   - `inspect_viewport` - Get visual description of current screen
+
+Example conversation:
+```
+You: "Use the connect_scenic tool to test connection to my Flamelex app"
+Claude: [Uses connect_scenic tool and shows connection status]
+
+You: "Send the text 'hello world' using send_keys"
+Claude: [Uses send_keys tool to type text into your app]
+```
 
 ### MCP Tools
 
