@@ -15,6 +15,7 @@ node_modules/
 dist/
 *.log
 .DS_Store
+priv/
 
 # IDE
 .vscode/
