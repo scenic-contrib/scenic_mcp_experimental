@@ -9,7 +9,7 @@ defmodule ScenicMcp.Application do
     Logger.info("Starting ScenicMCP Application...")
 
     children = [
-      {ScenicMcp.SimpleServer, port: 9999}
+      {ScenicMcp.Server, port: 9999}
     ]
 
     opts = [strategy: :one_for_one, name: ScenicMcp.Supervisor]
