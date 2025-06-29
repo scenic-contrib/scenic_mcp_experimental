@@ -229,8 +229,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             path: {
               type: 'string',
-              description: 'Path to the Scenic application directory (default: /Users/luke/workbench/flx/quillex)',
-              default: '/Users/luke/workbench/flx/quillex',
+              description: 'Path to the Scenic application directory',
             },
           },
         },
@@ -603,7 +602,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     case 'start_app': {
       try {
-        const { path: appPath = '/Users/luke/workbench/flx/quillex' } = request.params.arguments as any;
+        const { path: appPath } = request.params.arguments as any;
+        
+        if (!appPath) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Error: path parameter is required to start a Scenic application',
+              },
+            ],
+            isError: true,
+          };
+        }
         
         // Check if a process is already running
         if (managedProcess && !managedProcess.killed) {
