@@ -1,0 +1,194 @@
+name: Nightly Tests
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  extended-testing:
+    name: Extended Test Suite
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        elixir-version: ['1.14', '1.15', '1.16']
+        otp-version: ['24', '25', '26', '27']
+        node-version: ['18', '20', '21']
+        exclude:
+          # Exclude incompatible combinations
+          - elixir-version: '1.14'
+            otp-version: '27'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir-version }}
+        otp-version: ${{ matrix.otp-version }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libglfw3-dev libglew-dev pkg-config
+
+    - name: Install dependencies
+      run: |
+        mix deps.get
+        npm ci
+
+    - name: Run extended tests
+      run: |
+        # Run tests with different configurations
+        export MIX_ENV=test
+        export SCENIC_MCP_PORT=9999
+        export EVAL_TIMEOUT=15000
+        
+        # Run all test suites
+        npm run test:all
+
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15'
+        otp-version: '26'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libglfw3-dev libglew-dev pkg-config
+
+    - name: Install dependencies
+      run: |
+        mix deps.get
+        npm ci
+
+    - name: Build project
+      run: npm run build
+
+    - name: Run performance benchmarks
+      run: |
+        # Start server
+        mix run --no-halt &
+        SERVER_PID=$!
+        sleep 5
+        
+        # Run performance tests
+        export SCENIC_MCP_PORT=9999
+        export EVAL_TIMEOUT=30000
+        export PERFORMANCE_MODE=true
+        
+        npm run test:evals
+        
+        # Cleanup
+        kill $SERVER_PID || true
+
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-benchmarks-${{ github.run_number }}
+        path: |
+          performance-results.json
+          benchmark-report.txt
+        retention-days: 90
+
+  dependency-audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15'
+        otp-version: '26'
+
+    - name: Install dependencies
+      run: |
+        mix deps.get
+        npm ci
+
+    - name: Audit Node dependencies
+      run: |
+        npm audit --audit-level=moderate
+        npm outdated || true
+
+    - name: Audit Elixir dependencies
+      run: |
+        mix deps.audit
+        mix hex.outdated
+
+    - name: Check for security advisories
+      run: |
+        # Check for known vulnerabilities
+        if command -v retire &> /dev/null; then
+          retire
+        fi
+
+  notify-results:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [extended-testing, performance-benchmarks, dependency-audit]
+    if: always()
+    
+    steps:
+    - name: Notify on failure
+      if: needs.extended-testing.result == 'failure' || needs.performance-benchmarks.result == 'failure' || needs.dependency-audit.result == 'failure'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Nightly Tests Failed - ${new Date().toISOString().split('T')[0]}`,
+            body: `## 🚨 Nightly Test Failure Report
+            
+            The nightly test suite has detected issues:
+            
+            - Extended Testing: ${{ needs.extended-testing.result }}
+            - Performance Benchmarks: ${{ needs.performance-benchmarks.result }}
+            - Dependency Audit: ${{ needs.dependency-audit.result }}
+            
+            **Action Required**: Please review the failed jobs and address any issues.
+            
+            **Workflow Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            `,
+            labels: ['bug', 'nightly-test-failure', 'priority-high']
+          });
+
+    - name: Notify on success
+      if: needs.extended-testing.result == 'success' && needs.performance-benchmarks.result == 'success' && needs.dependency-audit.result == 'success'
+      run: |
+        echo "✅ All nightly tests passed successfully!"

@@ -1,0 +1,344 @@
+name: Test Suite
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+
+jobs:
+  elixir-tests:
+    name: Elixir Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      # Add any services your tests might need (like PostgreSQL)
+      # postgres:
+      #   image: postgres:13
+      #   env:
+      #     POSTGRES_PASSWORD: postgres
+      #   options: >-
+      #     --health-cmd pg_isready
+      #     --health-interval 10s
+      #     --health-timeout 5s
+      #     --health-retries 5
+
+    strategy:
+      matrix:
+        elixir-version: ['1.14', '1.15']
+        otp-version: ['24', '25', '26']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir-version }}
+        otp-version: ${{ matrix.otp-version }}
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ matrix.elixir-version }}-${{ matrix.otp-version }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ matrix.elixir-version }}-${{ matrix.otp-version }}-
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libglfw3-dev libglew-dev pkg-config
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile project
+      run: mix compile --warnings-as-errors
+
+    - name: Run tests
+      run: mix test --cover
+
+    - name: Generate coverage report
+      run: mix coveralls.github
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  typescript-tests:
+    name: TypeScript Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: ['18', '20', '21']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run TypeScript compilation
+      run: npm run build
+
+    - name: Run TypeScript tests
+      run: npm test -- --coverage --ci
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: typescript
+        name: typescript-coverage
+
+  mcp-evals:
+    name: MCP Evaluations
+    runs-on: ubuntu-latest
+    needs: [elixir-tests, typescript-tests]
+    
+    strategy:
+      matrix:
+        node-version: ['20']
+        elixir-version: ['1.15']
+        otp-version: ['26']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir-version }}
+        otp-version: ${{ matrix.otp-version }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libglfw3-dev libglew-dev pkg-config
+
+    - name: Cache Elixir dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ matrix.elixir-version }}-${{ matrix.otp-version }}-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install Elixir dependencies
+      run: mix deps.get
+
+    - name: Compile Elixir project
+      run: mix compile
+
+    - name: Install Node dependencies
+      run: npm ci
+
+    - name: Build TypeScript
+      run: npm run build
+
+    - name: Start Scenic MCP Server
+      run: |
+        # Start the Elixir MCP server in the background
+        mix run --no-halt &
+        SERVER_PID=$!
+        echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+        
+        # Wait for server to start
+        sleep 5
+        
+        # Check if server is running
+        if ! kill -0 $SERVER_PID 2>/dev/null; then
+          echo "Failed to start MCP server"
+          exit 1
+        fi
+
+    - name: Run MCP Evaluations
+      run: |
+        # Set evaluation configuration
+        export SCENIC_MCP_PORT=9999
+        export EVAL_TIMEOUT=10000
+        export ENABLE_LLM_SCORING=false
+        
+        # Run evaluations
+        npm run test:evals
+
+    - name: Stop Scenic MCP Server
+      if: always()
+      run: |
+        if [ ! -z "$SERVER_PID" ]; then
+          kill $SERVER_PID || true
+        fi
+
+    - name: Upload evaluation results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: mcp-evaluation-results
+        path: |
+          eval-results.json
+          eval-report.txt
+        retention-days: 30
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [elixir-tests, typescript-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15'
+        otp-version: '26'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libglfw3-dev libglew-dev pkg-config
+
+    - name: Install dependencies
+      run: |
+        mix deps.get
+        npm ci
+
+    - name: Run full integration test suite
+      run: |
+        # Start MCP server
+        mix run --no-halt &
+        SERVER_PID=$!
+        
+        # Wait for startup
+        sleep 5
+        
+        # Run integration tests
+        timeout 300 npm run test:all || {
+          echo "Integration tests failed or timed out"
+          kill $SERVER_PID || true
+          exit 1
+        }
+        
+        # Cleanup
+        kill $SERVER_PID || true
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run npm audit
+      run: npm audit --audit-level=high
+
+    - name: Run security scan with Semgrep
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/secrets
+          p/typescript
+
+  pr-comment:
+    name: PR Comment with Results
+    runs-on: ubuntu-latest
+    needs: [elixir-tests, typescript-tests, mcp-evals, integration-tests]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Download evaluation results
+      uses: actions/download-artifact@v3
+      with:
+        name: mcp-evaluation-results
+        path: ./eval-results
+
+    - name: Comment PR with evaluation results
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          // Try to read evaluation results
+          let evalResults = '';
+          try {
+            if (fs.existsSync('./eval-results/eval-report.txt')) {
+              evalResults = fs.readFileSync('./eval-results/eval-report.txt', 'utf8');
+            }
+          } catch (error) {
+            evalResults = 'Evaluation results not available';
+          }
+          
+          const comment = `## 🧪 Test Results Summary
+          
+          ✅ All test suites have completed successfully!
+          
+          ### Test Coverage:
+          - **Elixir Tests**: Unit and integration tests for ScenicMcp.Server
+          - **TypeScript Tests**: MCP client functionality and validation
+          - **MCP Evaluations**: End-to-end evaluation framework
+          - **Integration Tests**: Full system testing
+          - **Security Scan**: Vulnerability and secret scanning
+          
+          ### MCP Evaluation Results:
+          \`\`\`
+          ${evalResults}
+          \`\`\`
+          
+          🚀 **Ready for review!** All automated checks have passed.
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [elixir-tests, typescript-tests, mcp-evals, integration-tests]
+    if: always()
+    
+    steps:
+    - name: Cleanup artifacts
+      run: |
+        echo "Cleaning up temporary files and processes..."
+        # Kill any remaining processes
+        pkill -f "mix run" || true
+        pkill -f "scenic_mcp" || true
