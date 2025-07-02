@@ -36,4 +36,11 @@ defmodule ScenicMcp do
   def start_link(opts \\ []) do
     ScenicMcp.Application.start(:normal, opts)
   end
+
+  @doc """
+  Returns :world for basic testing.
+  """
+  def hello do
+    :world
+  end
 end

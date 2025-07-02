@@ -29,8 +29,39 @@ let processPath: string | null = null;
 let processLogs: string[] = [];
 const MAX_LOG_LINES = 1000;
 
-// Helper function to check if TCP server is available
-async function checkTCPServer(port: number = 9999): Promise<boolean> {
+// Connection state management
+let connectionState: 'unknown' | 'connected' | 'disconnected' = 'unknown';
+let healthCheckInterval: NodeJS.Timeout | null = null;
+let lastConnectionCheck = 0;
+const HEALTH_CHECK_INTERVAL = 5000; // Check every 5 seconds
+const CONNECTION_CACHE_TTL = 2000; // Cache connection status for 2 seconds
+
+// Helper function to check if TCP server is available with caching
+async function checkTCPServer(port: number = 9999, useCache: boolean = true): Promise<boolean> {
+  const now = Date.now();
+  
+  // Use cached result if recent enough
+  if (useCache && now - lastConnectionCheck < CONNECTION_CACHE_TTL) {
+    return connectionState === 'connected';
+  }
+  
+  const isConnected = await performTCPCheck(port);
+  lastConnectionCheck = now;
+  
+  // Update connection state
+  const previousState = connectionState;
+  connectionState = isConnected ? 'connected' : 'disconnected';
+  
+  // Log state changes
+  if (previousState !== connectionState && previousState !== 'unknown') {
+    console.error(`[Scenic MCP] Connection state changed: ${previousState} -> ${connectionState}`);
+  }
+  
+  return isConnected;
+}
+
+// Actual TCP connection check
+async function performTCPCheck(port: number = 9999): Promise<boolean> {
   return new Promise((resolve) => {
     const client = new net.Socket();
     const timeout = setTimeout(() => {
@@ -51,6 +82,29 @@ async function checkTCPServer(port: number = 9999): Promise<boolean> {
   });
 }
 
+// Start background health monitoring
+function startHealthMonitoring() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+  }
+  
+  healthCheckInterval = setInterval(async () => {
+    try {
+      await checkTCPServer(9999, false); // Force check, don't use cache
+    } catch (error) {
+      // Ignore errors in background monitoring
+    }
+  }, HEALTH_CHECK_INTERVAL);
+}
+
+// Stop background health monitoring
+function stopHealthMonitoring() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
+}
+
 // Helper function to send commands to Elixir TCP server with retry logic
 async function sendToElixir(command: any, retries = 3): Promise<string> {
   for (let i = 0; i < retries; i++) {
@@ -60,6 +114,8 @@ async function sendToElixir(command: any, retries = 3): Promise<string> {
       if (i === retries - 1) throw error;
       // Wait a bit before retrying
       await new Promise(resolve => setTimeout(resolve, 500));
+      // Force a fresh connection check on retry
+      await checkTCPServer(9999, false);
     }
   }
   throw new Error('Failed to send command after retries');
@@ -106,7 +162,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'connect_scenic',
-        description: 'Test connection to a Scenic application via TCP server',
+        description: 'CONNECTION SETUP: Establish connection to a running Scenic application. ALWAYS use this first before other tools to ensure the app is reachable. Essential for starting any Scenic interaction session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -120,7 +176,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'get_scenic_status',
-        description: 'Check the status of the Scenic TCP connection',
+        description: 'CONNECTION STATUS: Check current connection status and get detailed information about the Scenic application. Use for troubleshooting connectivity issues and verifying app state.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -129,7 +185,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'send_keys',
-        description: 'Send keyboard input to the connected Scenic application',
+        description: 'KEYBOARD INPUT: Send text input or special keystrokes to the Scenic application. Use for typing text, navigation shortcuts, testing keyboard interactions. Supports text, special keys (enter, escape, tab), and modifier combinations (ctrl+c, cmd+s).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -154,7 +210,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'send_mouse_move',
-        description: 'Move mouse cursor to specific coordinates',
+        description: 'CURSOR MOVEMENT: Move the mouse cursor to specific coordinates. Useful for hover effects, precise positioning before clicking, and testing mouse-over interactions.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -172,7 +228,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'send_mouse_click',
-        description: 'Click mouse at specific coordinates',
+        description: 'MOUSE INTERACTION: Click at specific screen coordinates to interact with buttons, links, and UI elements. Use with inspect_viewport to find clickable elements and their positions. Essential for testing UI interactions.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -196,7 +252,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'inspect_viewport',
-        description: 'Inspect the Scenic viewport to see what\'s currently displayed',
+        description: 'UI ANALYSIS: Get a detailed text-based description of what\'s currently displayed in the Scenic application. Perfect for understanding UI structure, finding clickable elements, and programmatic interface analysis. Use when you need to understand what\'s on screen without taking a screenshot.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -204,7 +260,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'take_screenshot',
-        description: 'Take a screenshot of the current Scenic application',
+        description: 'VISUAL DOCUMENTATION: Capture screenshots of the Scenic application for development progress tracking, debugging UI issues, creating before/after comparisons, and documenting visual changes. Essential for visual development workflows. Use when someone wants to "see how the app looks" or "capture current state".',
         inputSchema: {
           type: 'object',
           properties: {
@@ -223,7 +279,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'start_app',
-        description: 'Start a Scenic application process',
+        description: 'PROCESS MANAGEMENT: Launch a Scenic application from its directory path. Use when you need to start the app before connecting to it. Requires the absolute path to a Scenic application directory containing mix.exs.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -236,7 +292,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'stop_app',
-        description: 'Stop the currently running Scenic application',
+        description: 'PROCESS MANAGEMENT: Stop the currently managed Scenic application process. Use for cleanup, restarting apps, or ending development sessions.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -244,7 +300,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'app_status',
-        description: 'Get the status of the managed Scenic application process',
+        description: 'PROCESS MONITORING: Get status of the managed Scenic application process, including running state and connection info. Essential for debugging process issues and checking if the app is still running.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -252,7 +308,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'get_app_logs',
-        description: 'Get recent logs from the Scenic application',
+        description: 'DEBUGGING: Retrieve recent log output from the Scenic application. Essential for debugging crashes, errors, and understanding app behavior. Use when someone reports "the app crashed" or "something\'s wrong".',
         inputSchema: {
           type: 'object',
           properties: {
@@ -283,10 +339,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: `No Scenic TCP server found on port ${port}.\n\nTo use Scenic MCP, your Scenic application needs to include the ScenicMcp.Server module and start it on the specified port.`,
+                text: `No Scenic TCP server found on port ${port}.\n\nStatus: Waiting for connection\n\nTo use Scenic MCP, your Scenic application needs to include the ScenicMcp.Server module and start it on the specified port. The MCP server will continue monitoring for the connection.`,
               },
             ],
-            isError: true,
+            isError: false, // Don't mark as error - we're waiting
           };
         }
 
@@ -324,7 +380,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Scenic TCP server is not running.\n\nStatus: Disconnected',
+                text: `Scenic MCP Status:\n- Connection: Waiting for Scenic app\n- TCP Port: 9999\n- State: ${connectionState}\n\nThe MCP server is running but no Scenic application is connected. Start your Scenic app and the connection will be automatically detected.`,
               },
             ],
           };
@@ -362,10 +418,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot send keys: Scenic TCP server is not running.',
+                text: 'Cannot send keys: No Scenic application connected.\n\nUse connect_scenic first or start your Scenic application. The MCP server will automatically detect when the app becomes available.',
               },
             ],
-            isError: true,
+            isError: false, // Don't fail the MCP server
           };
         }
 
@@ -434,10 +490,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot send mouse move: Scenic TCP server is not running.',
+                text: 'Cannot send mouse move: No Scenic application connected.\n\nStart your Scenic application first.',
               },
             ],
-            isError: true,
+            isError: false,
           };
         }
 
@@ -493,10 +549,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot send mouse click: Scenic TCP server is not running.',
+                text: 'Cannot send mouse click: No Scenic application connected.\n\nStart your Scenic application first.',
               },
             ],
-            isError: true,
+            isError: false,
           };
         }
 
@@ -553,10 +609,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot inspect viewport: Scenic TCP server is not running.',
+                text: 'Cannot inspect viewport: No Scenic application connected.\n\nStart your Scenic application first to inspect its interface.',
               },
             ],
-            isError: true,
+            isError: false,
           };
         }
         
@@ -923,7 +979,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[Scenic MCP] Server started - ready to connect to Scenic applications');
+  
+  // Start background health monitoring
+  startHealthMonitoring();
+  
+  // Handle graceful shutdown
+  process.on('SIGTERM', () => {
+    stopHealthMonitoring();
+    process.exit(0);
+  });
+  
+  process.on('SIGINT', () => {
+    stopHealthMonitoring();
+    process.exit(0);
+  });
+  
+  console.error('[Scenic MCP] Server started - monitoring for Scenic applications');
 }
 
 main().catch((error) => {

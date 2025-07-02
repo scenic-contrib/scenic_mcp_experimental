@@ -22,9 +22,30 @@ defp deps do
 end
 ```
 
-2. **Add to your application's supervision tree:**
+2. **Configure your Scenic viewport with proper naming:**
 
-actually you shouldn't need to do this...
+**IMPORTANT**: For scenic_mcp to work correctly, your Scenic application MUST name both the viewport and driver. Update your `scenic_config()` function:
+
+```elixir
+def scenic_config() do
+  [
+    name: :main_viewport,  # Required for viewport lookup
+    size: @default_resolution,
+    default_scene: {YourApp.RootScene, []},
+    drivers: [
+      [
+        name: :scenic_driver,  # Required for driver lookup
+        module: Scenic.Driver.Local,
+        window: [
+          title: "Your App",
+          resizeable: true
+        ],
+        on_close: :stop_system
+      ]
+    ]
+  ]
+end
+```
 
 3. **Install Node.js dependencies:**
 ```bash
@@ -68,7 +89,14 @@ Click mouse at specific coordinates.
 - `button` (string): Mouse button (left, right, middle) - default: left
 
 #### `get_scenic_graph` (NEW in v0.2.0)
-Return the script table for a ViewPort.
+Return the script table for a ViewPort, providing a visual description of the scene.
+
+#### `take_screenshot`
+Capture a screenshot of the current Scenic display.
+
+**Parameters:**
+- `filename` (string, optional): Custom filename for the screenshot
+- `format` (string, optional): Output format - "path" (default) or "base64"
 
 ### Examples
 
@@ -130,12 +158,20 @@ MCP Client (Claude Desktop)
     ↓
 TypeScript MCP Server (scenic_mcp)
     ↓ (TCP port 9999)
-Elixir GenServer Bridge
-    ↓ (Scenic.ViewPort.Input.send/2)
-Scenic ViewPort
+Elixir GenServer Bridge (ScenicMcp.Server)
+    ↓ (ScenicMcp.Probes)
+Scenic.Driver.send_input/2
+    ↓
+Scenic Driver Process (:scenic_driver)
     ↓
 Your Scenic Application
 ```
+
+### Key Components
+
+- **ScenicMcp.Server**: TCP server that receives commands from the TypeScript bridge
+- **ScenicMcp.Probes**: Direct interface to Scenic internals, sends input via `Scenic.Driver.send_input/2`
+- **Process Names**: Uses `:main_viewport` and `:scenic_driver` registered process names
 
 ## Development
 
