@@ -3,9 +3,7 @@ import Config
 # Configure the test environment
 config :scenic_mcp,
   # Use a different port for tests to avoid conflicts
-  port: 9998,
-  # Don't auto-start in test mode
-  auto_start: false
+  port: 9998
 
 # Reduce log level in tests
 config :logger,

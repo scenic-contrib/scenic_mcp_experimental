@@ -29,8 +29,39 @@ let processPath: string | null = null;
 let processLogs: string[] = [];
 const MAX_LOG_LINES = 1000;
 
-// Helper function to check if TCP server is available
-async function checkTCPServer(port: number = 9999): Promise<boolean> {
+// Connection state management
+let connectionState: 'unknown' | 'connected' | 'disconnected' = 'unknown';
+let healthCheckInterval: NodeJS.Timeout | null = null;
+let lastConnectionCheck = 0;
+const HEALTH_CHECK_INTERVAL = 5000; // Check every 5 seconds
+const CONNECTION_CACHE_TTL = 2000; // Cache connection status for 2 seconds
+
+// Helper function to check if TCP server is available with caching
+async function checkTCPServer(port: number = 9999, useCache: boolean = true): Promise<boolean> {
+  const now = Date.now();
+  
+  // Use cached result if recent enough
+  if (useCache && now - lastConnectionCheck < CONNECTION_CACHE_TTL) {
+    return connectionState === 'connected';
+  }
+  
+  const isConnected = await performTCPCheck(port);
+  lastConnectionCheck = now;
+  
+  // Update connection state
+  const previousState = connectionState;
+  connectionState = isConnected ? 'connected' : 'disconnected';
+  
+  // Log state changes
+  if (previousState !== connectionState && previousState !== 'unknown') {
+    console.error(`[Scenic MCP] Connection state changed: ${previousState} -> ${connectionState}`);
+  }
+  
+  return isConnected;
+}
+
+// Actual TCP connection check
+async function performTCPCheck(port: number = 9999): Promise<boolean> {
   return new Promise((resolve) => {
     const client = new net.Socket();
     const timeout = setTimeout(() => {
@@ -51,6 +82,29 @@ async function checkTCPServer(port: number = 9999): Promise<boolean> {
   });
 }
 
+// Start background health monitoring
+function startHealthMonitoring() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+  }
+  
+  healthCheckInterval = setInterval(async () => {
+    try {
+      await checkTCPServer(9999, false); // Force check, don't use cache
+    } catch (error) {
+      // Ignore errors in background monitoring
+    }
+  }, HEALTH_CHECK_INTERVAL);
+}
+
+// Stop background health monitoring
+function stopHealthMonitoring() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
+}
+
 // Helper function to send commands to Elixir TCP server with retry logic
 async function sendToElixir(command: any, retries = 3): Promise<string> {
   for (let i = 0; i < retries; i++) {
@@ -60,6 +114,8 @@ async function sendToElixir(command: any, retries = 3): Promise<string> {
       if (i === retries - 1) throw error;
       // Wait a bit before retrying
       await new Promise(resolve => setTimeout(resolve, 500));
+      // Force a fresh connection check on retry
+      await checkTCPServer(9999, false);
     }
   }
   throw new Error('Failed to send command after retries');
@@ -283,10 +339,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: `No Scenic TCP server found on port ${port}.\n\nTo use Scenic MCP, your Scenic application needs to include the ScenicMcp.Server module and start it on the specified port.`,
+                text: `No Scenic TCP server found on port ${port}.\n\nStatus: Waiting for connection\n\nTo use Scenic MCP, your Scenic application needs to include the ScenicMcp.Server module and start it on the specified port. The MCP server will continue monitoring for the connection.`,
               },
             ],
-            isError: true,
+            isError: false, // Don't mark as error - we're waiting
           };
         }
 
@@ -324,7 +380,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Scenic TCP server is not running.\n\nStatus: Disconnected',
+                text: `Scenic MCP Status:\n- Connection: Waiting for Scenic app\n- TCP Port: 9999\n- State: ${connectionState}\n\nThe MCP server is running but no Scenic application is connected. Start your Scenic app and the connection will be automatically detected.`,
               },
             ],
           };
@@ -362,10 +418,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot send keys: Scenic TCP server is not running.',
+                text: 'Cannot send keys: No Scenic application connected.\n\nUse connect_scenic first or start your Scenic application. The MCP server will automatically detect when the app becomes available.',
               },
             ],
-            isError: true,
+            isError: false, // Don't fail the MCP server
           };
         }
 
@@ -434,10 +490,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot send mouse move: Scenic TCP server is not running.',
+                text: 'Cannot send mouse move: No Scenic application connected.\n\nStart your Scenic application first.',
               },
             ],
-            isError: true,
+            isError: false,
           };
         }
 
@@ -493,10 +549,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot send mouse click: Scenic TCP server is not running.',
+                text: 'Cannot send mouse click: No Scenic application connected.\n\nStart your Scenic application first.',
               },
             ],
-            isError: true,
+            isError: false,
           };
         }
 
@@ -553,10 +609,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: 'Cannot inspect viewport: Scenic TCP server is not running.',
+                text: 'Cannot inspect viewport: No Scenic application connected.\n\nStart your Scenic application first to inspect its interface.',
               },
             ],
-            isError: true,
+            isError: false,
           };
         }
         
@@ -923,7 +979,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[Scenic MCP] Server started - ready to connect to Scenic applications');
+  
+  // Start background health monitoring
+  startHealthMonitoring();
+  
+  // Handle graceful shutdown
+  process.on('SIGTERM', () => {
+    stopHealthMonitoring();
+    process.exit(0);
+  });
+  
+  process.on('SIGINT', () => {
+    stopHealthMonitoring();
+    process.exit(0);
+  });
+  
+  console.error('[Scenic MCP] Server started - monitoring for Scenic applications');
 }
 
 main().catch((error) => {
