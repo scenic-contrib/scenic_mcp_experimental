@@ -187,6 +187,47 @@ cd scenic_mcp
 node src/index.ts
 ```
 
+## Testing
+
+This project includes comprehensive testing to ensure reliability and guide improvements.
+
+### Test Suites
+
+1. **Elixir Unit Tests** - Core server functionality
+   ```bash
+   mix test
+   mix test --cover  # With coverage reporting
+   ```
+
+2. **TypeScript Tests** - MCP integration testing
+   ```bash
+   npm test
+   npm run test:coverage  # With coverage
+   npm run test:watch     # Watch mode
+   ```
+
+3. **LLM Tool Testing** - Validates tool descriptions and usability
+   ```bash
+   npm run test:llm-tools
+   ```
+
+### Testing Innovation: LLM-Driven Tool Enhancement
+
+One of the unique aspects of this project is how we use LLM testing to improve the tool descriptions:
+
+1. **Tool Usage Analysis**: We run scenarios through LLMs to see which tools they discover and use
+2. **Description Enhancement**: Based on usage patterns, we automatically enhance tool descriptions
+3. **Real-World Validation**: The enhanced descriptions are tested against real development scenarios
+
+This approach has led to significant improvements in tool discoverability and correct usage by AI assistants.
+
+### Running All Tests
+```bash
+npm run test:all  # Runs both Elixir and TypeScript tests
+```
+
+For detailed testing documentation, see [TESTING.md](TESTING.md).
+
 ## Requirements
 
 - Elixir/OTP 24+

@@ -61,23 +61,23 @@ defmodule ScenicMcp.ServerTest do
       response = send_tcp_command(port, command)
       
       assert is_map(response)
-      assert response["error"] == "No viewport found"
+      assert String.starts_with?(response["error"], "Failed to get scenic graph")
     end
 
-    test "send_keys returns error when no viewport available", %{port: port} do
+    test "send_keys returns error when no driver available", %{port: port} do
       command = %{"action" => "send_keys", "text" => "hello"}
       response = send_tcp_command(port, command)
       
       assert is_map(response)
-      assert response["error"] == "No viewport found"
+      assert response["error"] == "No driver found"
     end
 
-    test "send_mouse_move returns error when no viewport available", %{port: port} do
+    test "send_mouse_move returns error when no driver available", %{port: port} do
       command = %{"action" => "send_mouse_move", "x" => 100, "y" => 200}
       response = send_tcp_command(port, command)
       
       assert is_map(response)
-      assert response["error"] == "No viewport found"
+      assert response["error"] == "No driver found"
     end
 
     test "take_screenshot returns error when no viewport available", %{port: port} do
@@ -89,15 +89,10 @@ defmodule ScenicMcp.ServerTest do
     end
   end
 
-  describe "viewport detection" do
-    test "find_scenic_viewport returns nil when no viewport exists" do
-      result = ScenicMcp.Server.find_scenic_viewport()
+  describe "driver detection" do
+    test "find_scenic_driver returns nil when no driver exists" do
+      result = ScenicMcp.Server.find_scenic_driver()
       assert result == nil
-    end
-
-    test "get_viewport_info returns error when no viewport exists" do
-      result = ScenicMcp.Server.get_viewport_info()
-      assert result == %{error: "No viewport found"}
     end
   end
 

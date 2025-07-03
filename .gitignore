@@ -17,6 +17,15 @@ dist/
 .DS_Store
 priv/
 
+# TypeScript compilation artifacts
+*.d.ts
+*.js.map
+*.d.ts.map
+# Compiled JS files in test directories  
+test/**/*.js
+# But keep config files
+!jest.config.js
+
 # IDE
 .vscode/
 .idea/

@@ -1,0 +1,64 @@
+{
+  "timestamp": "2025-06-29T19:31:49.939Z",
+  "phase": "baseline",
+  "scenarios": 4,
+  "metrics": {
+    "discoveryRate": 80,
+    "accuracyRate": 100,
+    "combinedSuccess": 80,
+    "totalToolsExpected": 10,
+    "totalToolsUsed": 8,
+    "totalCorrectUsage": 8
+  },
+  "tests": [
+    {
+      "scenario": "Process Management and Logs",
+      "userIntent": "App crashed, need to check what happened and see logs",
+      "toolsUsed": [
+        "app_status",
+        "get_app_logs"
+      ],
+      "toolsExpected": [
+        "app_status",
+        "get_app_logs"
+      ],
+      "success": true,
+      "issues": [
+        "Perfect tool selection for debugging"
+      ]
+    },
+    {
+      "scenario": "App Startup and Connection",
+      "userIntent": "Start Quillex text editor for development",
+      "toolsUsed": [
+        "start_app",
+        "connect_scenic"
+      ],
+      "toolsExpected": [
+        "start_app",
+        "connect_scenic"
+      ],
+      "success": true,
+      "issues": [
+        "Logical flow: start then connect"
+      ]
+    },
+    {
+      "scenario": "Interactive Development Session",
+      "userIntent": "See what's on screen in the running text editor, document with screenshot",
+      "toolsUsed": [
+        "take_screenshot",
+        "inspect_viewport"
+      ],
+      "toolsExpected": [
+        "inspect_viewport",
+        "take_screenshot",
+        "connect_scenic"
+      ],
+      "success": true,
+      "issues": [
+        "Used key visual tools, connection already established"
+      ]
+    }
+  ]
+}

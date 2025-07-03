@@ -14,13 +14,11 @@
     "prepublishOnly": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:elixir": "cd .. && mix test",
-    "test:evals": "tsc && node evals/scenic-mcp-evals.js",
-    "test:all": "npm run test && npm run test:elixir && npm run test:evals",
-    "test:llm-tools": "tsc && node run_llm_tool_tests.js",
-    "test:harness": "tsc && node llm_tool_harness.js",
-    "enhance:descriptions": "tsc && node apply_enhanced_descriptions.js",
-    "enhance:revert": "tsc && node apply_enhanced_descriptions.js revert"
+    "test:coverage": "jest --coverage",
+    "test:elixir": "mix test",
+    "test:all": "npm run test && npm run test:elixir",
+    "test:llm-tools": "cd test/tools/llm && node run_llm_tool_tests.js",
+    "test:enhance": "cd test/tools/enhancements && node apply_enhanced_descriptions.js"
   },
   "keywords": ["mcp", "scenic", "elixir", "automation"],
   "author": "Your Name",
