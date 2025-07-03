@@ -11,17 +11,17 @@ jobs:
     name: Elixir Tests
     runs-on: ubuntu-latest
     
-    services:
-      # Add any services your tests might need (like PostgreSQL)
-      # postgres:
-      #   image: postgres:13
-      #   env:
-      #     POSTGRES_PASSWORD: postgres
-      #   options: >-
-      #     --health-cmd pg_isready
-      #     --health-interval 10s
-      #     --health-timeout 5s
-      #     --health-retries 5
+    # Uncomment if you need services like PostgreSQL
+    # services:
+    #   postgres:
+    #     image: postgres:13
+    #     env:
+    #       POSTGRES_PASSWORD: postgres
+    #     options: >-
+    #       --health-cmd pg_isready
+    #       --health-interval 10s
+    #       --health-timeout 5s
+    #       --health-retries 5
 
     strategy:
       matrix:
@@ -101,8 +101,8 @@ jobs:
         flags: typescript
         name: typescript-coverage
 
-  mcp-evals:
-    name: MCP Evaluations
+  llm-tool-tests:
+    name: LLM Tool Tests
     runs-on: ubuntu-latest
     needs: [elixir-tests, typescript-tests]
     
@@ -169,15 +169,15 @@ jobs:
           exit 1
         fi
 
-    - name: Run MCP Evaluations
+    - name: Run LLM Tool Tests
       run: |
         # Set evaluation configuration
         export SCENIC_MCP_PORT=9999
         export EVAL_TIMEOUT=10000
         export ENABLE_LLM_SCORING=false
         
-        # Run evaluations
-        npm run test:evals
+        # Run LLM tool tests
+        npm run test:llm-tools
 
     - name: Stop Scenic MCP Server
       if: always()
@@ -186,14 +186,14 @@ jobs:
           kill $SERVER_PID || true
         fi
 
-    - name: Upload evaluation results
+    - name: Upload LLM tool test results
       if: always()
       uses: actions/upload-artifact@v3
       with:
-        name: mcp-evaluation-results
+        name: llm-tool-test-results
         path: |
-          eval-results.json
-          eval-report.txt
+          test-results.json
+          test-report.txt
         retention-days: 30
 
   integration-tests:
@@ -277,15 +277,15 @@ jobs:
   pr-comment:
     name: PR Comment with Results
     runs-on: ubuntu-latest
-    needs: [elixir-tests, typescript-tests, mcp-evals, integration-tests]
+    needs: [elixir-tests, typescript-tests, llm-tool-tests, integration-tests]
     if: github.event_name == 'pull_request'
     
     steps:
-    - name: Download evaluation results
+    - name: Download LLM tool test results
       uses: actions/download-artifact@v3
       with:
-        name: mcp-evaluation-results
-        path: ./eval-results
+        name: llm-tool-test-results
+        path: ./test-results
 
     - name: Comment PR with evaluation results
       uses: actions/github-script@v6
@@ -293,14 +293,14 @@ jobs:
         script: |
           const fs = require('fs');
           
-          // Try to read evaluation results
-          let evalResults = '';
+          // Try to read test results
+          let testResults = '';
           try {
-            if (fs.existsSync('./eval-results/eval-report.txt')) {
-              evalResults = fs.readFileSync('./eval-results/eval-report.txt', 'utf8');
+            if (fs.existsSync('./test-results/test-report.txt')) {
+              testResults = fs.readFileSync('./test-results/test-report.txt', 'utf8');
             }
           } catch (error) {
-            evalResults = 'Evaluation results not available';
+            testResults = 'Test results not available';
           }
           
           const comment = `## 🧪 Test Results Summary
@@ -310,13 +310,13 @@ jobs:
           ### Test Coverage:
           - **Elixir Tests**: Unit and integration tests for ScenicMcp.Server
           - **TypeScript Tests**: MCP client functionality and validation
-          - **MCP Evaluations**: End-to-end evaluation framework
+          - **LLM Tool Tests**: Tool discoverability and usage validation
           - **Integration Tests**: Full system testing
           - **Security Scan**: Vulnerability and secret scanning
           
-          ### MCP Evaluation Results:
+          ### LLM Tool Test Results:
           \`\`\`
-          ${evalResults}
+          ${testResults}
           \`\`\`
           
           🚀 **Ready for review!** All automated checks have passed.
@@ -332,7 +332,7 @@ jobs:
   cleanup:
     name: Cleanup
     runs-on: ubuntu-latest
-    needs: [elixir-tests, typescript-tests, mcp-evals, integration-tests]
+    needs: [elixir-tests, typescript-tests, llm-tool-tests, integration-tests]
     if: always()
     
     steps:
