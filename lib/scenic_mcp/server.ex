@@ -308,7 +308,7 @@ defmodule ScenicMcp.Server do
     end
 
     # Find viewport and get driver
-    viewport = viewport_pid()
+    viewport = viewport_pid_safe()
 
     if viewport do
       try do

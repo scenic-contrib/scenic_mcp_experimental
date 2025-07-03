@@ -1,0 +1,32 @@
+{
+  "timestamp": "2025-06-29T19:30:50.122Z",
+  "records": [
+    {
+      "scenario": "Visual Development Iteration",
+      "userIntent": "I want to see how the app looks right now and document UI state",
+      "toolsUsed": [
+        "connect_scenic",
+        "take_screenshot"
+      ],
+      "toolsExpected": [
+        "connect_scenic",
+        "take_screenshot",
+        "inspect_viewport"
+      ],
+      "success": true,
+      "issues": [
+        "Both tools correctly handled disconnected state",
+        "Natural flow: connect -> screenshot"
+      ],
+      "timestamp": "2025-06-29T19:30:50.119Z"
+    }
+  ],
+  "metrics": {
+    "discoveryRate": 66.66666666666666,
+    "accuracyRate": 100,
+    "totalScenarios": 1,
+    "totalToolsExpected": 3,
+    "totalToolsUsed": 2,
+    "totalCorrectUsage": 2
+  }
+}

@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * Tests for the Scenic MCP TypeScript server
  * These tests verify the MCP server functionality without requiring a running Elixir server
@@ -20,9 +18,10 @@ describe('Scenic MCP Server', () => {
 
   beforeAll(() => {
     // Compile TypeScript if needed
-    if (!fs.existsSync(path.join(__dirname, '../dist/index.js'))) {
+    const projectRoot = path.join(__dirname, '../../..');
+    if (!fs.existsSync(path.join(projectRoot, 'dist/index.js'))) {
       console.log('Compiling TypeScript...');
-      const tscProcess = spawn('npx', ['tsc'], { cwd: path.join(__dirname, '..') });
+      const tscProcess = spawn('npx', ['tsc'], { cwd: projectRoot });
       tscProcess.on('close', (code) => {
         if (code !== 0) {
           throw new Error('TypeScript compilation failed');

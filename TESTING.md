@@ -5,19 +5,23 @@ This document describes the comprehensive testing strategy for the Scenic MCP se
 ## 🧪 Test Suites Overview
 
 ### 1. **Elixir Unit & Integration Tests**
-- **Location**: `test/scenic_mcp/`
+- **Location**: `test/scenic_mcp/` (unit), `test/elixir/integration/` (integration scripts)
 - **Framework**: ExUnit
 - **Coverage**: ScenicMcp.Server GenServer, TCP handling, command processing
 
 ### 2. **TypeScript Unit Tests**
-- **Location**: `src/*.test.ts`
+- **Location**: `test/typescript/unit/`
 - **Framework**: Jest
 - **Coverage**: MCP client logic, validation, error handling
 
-### 3. **MCP Evaluations (Evals)**
-- **Location**: `evals/`
-- **Framework**: Custom evaluation suite
-- **Coverage**: End-to-end MCP functionality, performance, reliability
+### 3. **LLM Tool Testing**
+- **Location**: `test/tools/llm/`
+- **Framework**: Custom harness for LLM interaction testing
+- **Coverage**: Tool discoverability, usage patterns, description effectiveness
+
+### 4. **Enhancement Tools**
+- **Location**: `test/tools/enhancements/`
+- **Purpose**: Automated tool description improvements based on usage data
 
 ## 🚀 Running Tests Locally
 
@@ -47,8 +51,11 @@ npm test
 npm test -- --coverage             # With coverage
 npm run test:watch                  # Watch mode
 
-# MCP Evaluations
-npm run test:evals
+# LLM Tool Testing
+npm run test:llm-tools
+
+# Enhancement Tools
+npm run test:enhance
 
 # All tests
 npm run test:all

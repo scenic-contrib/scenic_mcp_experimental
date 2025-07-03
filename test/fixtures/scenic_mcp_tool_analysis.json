@@ -1,0 +1,197 @@
+{
+  "timestamp": "2025-06-29T19:28:44.851Z",
+  "scenarios": [
+    {
+      "name": "Visual Development Iteration",
+      "description": "Developer is building a Scenic GUI and needs to see visual progress during development",
+      "context": "You are helping a developer build a Scenic application. They've made some UI changes and want to see how it looks. They mention wanting to \"see what the app looks like now\" and \"check if the layout is correct\". The app is already running.",
+      "expectedTools": [
+        "take_screenshot",
+        "inspect_viewport",
+        "get_scenic_status"
+      ],
+      "criticalTools": [
+        "take_screenshot"
+      ]
+    },
+    {
+      "name": "UI Testing and Validation",
+      "description": "Testing interactive elements by clicking and typing",
+      "context": "The developer has a form with input fields and buttons. They want to test if clicking the submit button works and if text input is properly handled. The app is running and you can see a login form on screen.",
+      "expectedTools": [
+        "inspect_viewport",
+        "send_mouse_click",
+        "send_keys",
+        "take_screenshot"
+      ],
+      "criticalTools": [
+        "send_mouse_click",
+        "send_keys"
+      ]
+    },
+    {
+      "name": "Debugging Visual Issues",
+      "description": "Something looks wrong on screen and needs investigation",
+      "context": "The developer says \"the button appears to be in the wrong place\" and \"the text seems cut off\". They need help understanding what's currently displayed and what might be causing the layout issues.",
+      "expectedTools": [
+        "take_screenshot",
+        "inspect_viewport",
+        "get_scenic_status"
+      ],
+      "criticalTools": [
+        "take_screenshot",
+        "inspect_viewport"
+      ]
+    },
+    {
+      "name": "App Startup and Connection",
+      "description": "Getting a Scenic app running and connected for development",
+      "context": "You need to help start a Scenic application located at ./quillex and then connect to it for development. The developer wants to begin testing their text editor app.",
+      "expectedTools": [
+        "start_app",
+        "connect_scenic",
+        "get_scenic_status",
+        "get_app_logs"
+      ],
+      "criticalTools": [
+        "start_app",
+        "connect_scenic"
+      ]
+    },
+    {
+      "name": "Process Management and Logs",
+      "description": "Managing the development process and checking for errors",
+      "context": "The Scenic app seems to have crashed or is behaving strangely. The developer needs to check what happened, see recent logs, and possibly restart the application.",
+      "expectedTools": [
+        "app_status",
+        "get_app_logs",
+        "stop_app",
+        "start_app"
+      ],
+      "criticalTools": [
+        "get_app_logs",
+        "app_status"
+      ]
+    },
+    {
+      "name": "Interactive Development Session",
+      "description": "Full development workflow with visual feedback",
+      "context": "You're helping build a text editor. The developer wants to open the app, see what's on screen, try typing some text, take a screenshot to document progress, and then make some navigation tests using keyboard shortcuts.",
+      "expectedTools": [
+        "connect_scenic",
+        "inspect_viewport",
+        "send_keys",
+        "take_screenshot",
+        "send_mouse_click"
+      ],
+      "criticalTools": [
+        "inspect_viewport",
+        "send_keys",
+        "take_screenshot"
+      ]
+    },
+    {
+      "name": "Documentation and Progress Tracking",
+      "description": "Creating visual documentation of development progress",
+      "context": "The developer is working on UI improvements and wants to create before/after screenshots for documentation. They've made changes and want to capture the current state visually to include in their project documentation.",
+      "expectedTools": [
+        "take_screenshot",
+        "inspect_viewport"
+      ],
+      "criticalTools": [
+        "take_screenshot"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "toolName": "connect_scenic",
+      "scenario": "",
+      "expectedUsage": 2,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "get_scenic_status",
+      "scenario": "",
+      "expectedUsage": 3,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "inspect_viewport",
+      "scenario": "",
+      "expectedUsage": 5,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "take_screenshot",
+      "scenario": "",
+      "expectedUsage": 5,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "send_keys",
+      "scenario": "",
+      "expectedUsage": 2,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "send_mouse_move",
+      "scenario": "",
+      "expectedUsage": 0,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "send_mouse_click",
+      "scenario": "",
+      "expectedUsage": 2,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "start_app",
+      "scenario": "",
+      "expectedUsage": 2,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "stop_app",
+      "scenario": "",
+      "expectedUsage": 1,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "app_status",
+      "scenario": "",
+      "expectedUsage": 1,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    },
+    {
+      "toolName": "get_app_logs",
+      "scenario": "",
+      "expectedUsage": 2,
+      "actualUsage": 0,
+      "correctUsage": 0,
+      "missedOpportunities": []
+    }
+  ],
+  "testResults": []
+}

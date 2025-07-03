@@ -11,6 +11,10 @@ defmodule ScenicMcp.Probes do
         raise "Unable to find the :main_viewport process. The Scenic supervision tree may not be running, or the viewport may be registered under a different name."
     end
   end
+  
+  def viewport_pid_safe do
+    Process.whereis(:main_viewport)
+  end
 
   def viewport_state do
     :sys.get_state(viewport_pid(), 5000)
@@ -23,6 +27,10 @@ defmodule ScenicMcp.Probes do
       _otherwise ->
         raise "Unable to find the :scenic_driver process. The Scenic supervision tree may not be running, or the viewport may be registered under a different name."
     end
+  end
+  
+  def driver_pid_safe do
+    Process.whereis(:scenic_driver)
   end
 
   def driver_state do
