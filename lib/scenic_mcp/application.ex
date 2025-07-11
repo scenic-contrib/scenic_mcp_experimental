@@ -4,14 +4,15 @@ defmodule ScenicMcp.Application do
   use Application
   require Logger
 
-  # HERE update the docs Claude
-  @port 9999
-
   @impl true
   def start(_type, _args) do
     Logger.info("Starting ScenicMCP Application...")
 
-    children = [{ScenicMcp.Server, port: @port}]
+    # Get port from configuration, default to 9999
+    port = Application.get_env(:scenic_mcp, :port, 9999)
+    Logger.info("ScenicMCP starting on port #{port}")
+
+    children = [{ScenicMcp.Server, port: port}]
 
     opts = [strategy: :one_for_one, name: ScenicMcp.Supervisor]
     Supervisor.start_link(children, opts)
