@@ -14,11 +14,20 @@ defmodule ScenicMcp.Server do
   def init(port) do
     case :gen_tcp.listen(port, [:binary, packet: :line, active: false, reuseaddr: true]) do
       {:ok, listen_socket} ->
-        Logger.info("ScenicMCP TCP server listening on port #{port}")
-        {:ok, %{listen_socket: listen_socket, port: port}, {:continue, :accept}}
+        app_name = Application.get_env(:scenic_mcp, :app_name, "Unknown")
+        Logger.info("ScenicMCP TCP server listening on port #{port} for #{app_name}")
+        {:ok, %{listen_socket: listen_socket, port: port, app_name: app_name}, {:continue, :accept}}
+
+      {:error, :eaddrinuse} ->
+        app_name = Application.get_env(:scenic_mcp, :app_name, "Unknown")
+        Logger.error("❌ Port #{port} is already in use for #{app_name}!")
+        Logger.error("💡 Configure a unique port in config.exs: config :scenic_mcp, port: UNIQUE_PORT")
+        Logger.error("📋 Suggested ports: Flamelex=9999, Quillex=9997, Tests=9996/9998")
+        {:stop, :eaddrinuse}
 
       {:error, reason} ->
-        Logger.error("Failed to start TCP server on port #{port}: #{inspect(reason)}")
+        app_name = Application.get_env(:scenic_mcp, :app_name, "Unknown")
+        Logger.error("Failed to start TCP server on port #{port} for #{app_name}: #{inspect(reason)}")
         {:stop, reason}
     end
   end
@@ -66,30 +75,42 @@ defmodule ScenicMcp.Server do
 
   # Handle different commands
   defp handle_command(json_string) do
-    case Jason.decode(json_string) do
-      {:ok, %{"action" => "get_scenic_graph"} = command} ->
-        handle_get_scenic_graph(command)
+    # Special case for "hello" command used by TypeScript for connection testing
+    case String.trim(json_string) do
+      "hello" ->
+        %{status: "ok", message: "Hello from Scenic MCP Server", version: "0.2.0"}
+      
+      _ ->
+        # Try to parse as JSON
+        case Jason.decode(json_string) do
+          {:ok, %{"action" => "status"}} ->
+            # Handle status command
+            %{status: "ok", message: "Scenic MCP Server is running", version: "0.2.0"}
 
-      {:ok, %{"action" => "send_keys"} = command} ->
-        handle_send_keys(command)
+          {:ok, %{"action" => "get_scenic_graph"} = command} ->
+            handle_get_scenic_graph(command)
 
-      {:ok, %{"action" => "send_mouse_move"} = command} ->
-        handle_mouse_move(command)
+          {:ok, %{"action" => "send_keys"} = command} ->
+            handle_send_keys(command)
 
-      {:ok, %{"action" => "send_mouse_click"} = command} ->
-        handle_mouse_click(command)
+          {:ok, %{"action" => "send_mouse_move"} = command} ->
+            handle_mouse_move(command)
 
-      {:ok, %{"action" => "take_screenshot"} = command} ->
-        # handle_take_screenshot(command)
-        ScenicMcp.Tools.take_screenshot(command)
+          {:ok, %{"action" => "send_mouse_click"} = command} ->
+            handle_mouse_click(command)
 
-      {:ok, command} ->
-        Logger.error "#{__MODULE__} recv'd an unknown command: #{inspect command}"
-        %{error: "Unknown command", command: command}
+          {:ok, %{"action" => "take_screenshot"} = command} ->
+            # handle_take_screenshot(command)
+            ScenicMcp.Tools.take_screenshot(command)
 
-      {:error, _} ->
-        Logger.error "#{__MODULE__} recv'd some invalid JSON"
-        %{error: "Invalid JSON"}
+          {:ok, command} ->
+            Logger.error "#{__MODULE__} recv'd an unknown command: #{inspect command}"
+            %{error: "Unknown command", command: command}
+
+          {:error, _} ->
+            Logger.error "#{__MODULE__} recv'd some invalid JSON: #{inspect json_string}"
+            %{error: "Invalid JSON"}
+        end
     end
   end
 
@@ -99,17 +120,21 @@ defmodule ScenicMcp.Server do
       vp_state = viewport_state()
 
       case vp_state do
-        %{script_table: script_table} when script_table != nil ->
+        %{script_table: script_table} = state when script_table != nil ->
           # Read all scripts from the ETS table
           scripts = :ets.tab2list(script_table)
 
           # Build a visual description of the scene
           visual_description = build_scene_description(scripts)
+          
+          # Get semantic DOM information if available
+          semantic_info = build_semantic_description(Map.get(state, :semantic_table))
 
           %{
             status: "ok",
             script_count: length(scripts),
             visual_description: visual_description,
+            semantic_elements: semantic_info,
             raw_scripts: Enum.map(scripts, fn {id, _compiled} -> id end)
           }
 
@@ -142,6 +167,78 @@ defmodule ScenicMcp.Server do
       "#{component} (#{length(items)} instances)"
     end)
     |> Enum.join(", ")
+  end
+  
+  defp build_semantic_description(nil), do: %{count: 0, elements: [], summary: "No semantic DOM available"}
+  
+  defp build_semantic_description(semantic_table) do
+    semantic_entries = :ets.tab2list(semantic_table)
+    
+    elements = Enum.flat_map(semantic_entries, fn {_key, info} ->
+      if is_map(info) && Map.has_key?(info, :elements) do
+        info.elements
+        |> Map.values()
+        |> Enum.map(fn elem ->
+          semantic = elem[:semantic] || %{}
+          
+          %{
+            type: semantic[:type],
+            role: semantic[:role],
+            label: semantic[:label],
+            description: semantic[:description],
+            clickable: semantic[:clickable] || false,
+            state: semantic[:state],
+            path: semantic[:path],
+            menu_index: semantic[:menu_index],
+            position: extract_position(elem),
+            id: elem[:id]
+          }
+        end)
+      else
+        []
+      end
+    end)
+    
+    # Group by type for summary
+    by_type = elements
+    |> Enum.group_by(& &1.type)
+    |> Enum.map(fn {type, items} -> {type, length(items)} end)
+    |> Map.new()
+    
+    # Build human-readable summary
+    summary = build_semantic_summary(elements, by_type)
+    
+    %{
+      count: length(elements),
+      by_type: by_type,
+      clickable_count: Enum.count(elements, & &1.clickable),
+      elements: elements,
+      summary: summary
+    }
+  end
+  
+  defp extract_position(elem) do
+    cond do
+      frame = elem[:frame] -> %{x: frame.pin.x, y: frame.pin.y, width: frame.size.width, height: frame.size.height}
+      translate = elem[:translate] -> %{x: elem(translate, 0), y: elem(translate, 1)}
+      true -> nil
+    end
+  end
+  
+  defp build_semantic_summary(elements, by_type) do
+    clickable = Enum.filter(elements, & &1.clickable)
+    menu_items = Enum.filter(elements, & &1.type == :menu_item)
+    
+    parts = [
+      "Found #{length(elements)} semantic elements",
+      if(length(clickable) > 0, do: "#{length(clickable)} clickable"),
+      if(length(menu_items) > 0, do: "#{length(menu_items)} menu items"),
+      if(map_size(by_type) > 0, do: "Types: #{by_type |> Map.keys() |> Enum.join(", ")}")
+    ]
+    |> Enum.filter(& &1)
+    |> Enum.join(", ")
+    
+    parts
   end
 
   # Visual feedback functions commented out to avoid warnings
@@ -179,7 +276,9 @@ defmodule ScenicMcp.Server do
       String.graphemes(text)
       |> Enum.each(fn char ->
         # Use codepoint for text input instead of key events
-        event = {:codepoint, {char, []}}
+        # Convert string to codepoint integer
+        codepoint = char |> String.to_charlist() |> List.first()
+        event = {:codepoint, {codepoint, []}}
         Scenic.Driver.send_input(driver_state, event)
         Process.sleep(10)
       end)
@@ -272,8 +371,7 @@ defmodule ScenicMcp.Server do
 
   defp parse_modifiers(modifiers) when is_list(modifiers) do
     modifiers
-    |> Enum.map(&String.to_atom/1)
-    |> Enum.filter(&(&1 in [:shift, :ctrl, :alt, :cmd, :meta]))
+    |> Enum.filter(&(&1 in ["shift", "ctrl", "alt", "cmd", "meta"]))
   end
 
   defp parse_modifiers(_), do: []

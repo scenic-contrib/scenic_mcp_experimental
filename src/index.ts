@@ -31,14 +31,136 @@ const MAX_LOG_LINES = 1000;
 
 // Connection state management
 let connectionState: 'unknown' | 'connected' | 'disconnected' = 'unknown';
-let healthCheckInterval: NodeJS.Timeout | null = null;
+let healthCheckInterval: NodeJS.Timeout | undefined = undefined;
 let lastConnectionCheck = 0;
-const HEALTH_CHECK_INTERVAL = 5000; // Check every 5 seconds
+let lastSuccessfulCommand = 0; // Track last successful command time
+const HEALTH_CHECK_INTERVAL = 30000; // Check every 30 seconds
 const CONNECTION_CACHE_TTL = 2000; // Cache connection status for 2 seconds
+const COMMAND_SUCCESS_TTL = 10000; // Consider connected for 10s after successful command
+let currentPort = 9999; // Default port, can be changed via connect_scenic
+
+// Persistent connection management
+let persistentConnection: net.Socket | null = null;
+let connectionBuffer = '';
+let pendingCallbacks: Map<number, {resolve: (data: string) => void, reject: (err: Error) => void}> = new Map();
+let messageIdCounter = 0;
+
+// Create or get persistent connection
+function getPersistentConnection(): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    if (persistentConnection && !persistentConnection.destroyed) {
+      resolve(persistentConnection);
+      return;
+    }
+
+    // Create new connection
+    persistentConnection = new net.Socket();
+    
+    persistentConnection.connect(currentPort, 'localhost', () => {
+      console.log(`Persistent connection established to port ${currentPort}`);
+      connectionState = 'connected';
+      lastSuccessfulCommand = Date.now();
+      resolve(persistentConnection!);
+    });
+
+    persistentConnection.on('data', (data) => {
+      connectionBuffer += data.toString();
+      
+      // Process complete messages (ending with newline)
+      let lines = connectionBuffer.split('\n');
+      connectionBuffer = lines.pop() || ''; // Keep incomplete line in buffer
+      
+      for (const line of lines) {
+        if (line.trim()) {
+          // For now, resolve the oldest pending callback
+          // In a more robust implementation, we'd match message IDs
+          const entry = pendingCallbacks.entries().next().value;
+          if (entry) {
+            const [callbackId, callback] = entry;
+            pendingCallbacks.delete(callbackId);
+            callback.resolve(line.trim());
+          }
+        }
+      }
+    });
+
+    persistentConnection.on('error', (err) => {
+      console.error('Persistent connection error:', err);
+      connectionState = 'disconnected';
+      persistentConnection = null;
+      
+      // Reject all pending callbacks
+      for (const [id, callback] of pendingCallbacks) {
+        callback.reject(err);
+      }
+      pendingCallbacks.clear();
+      
+      reject(err);
+    });
+
+    persistentConnection.on('close', () => {
+      console.log('Persistent connection closed');
+      connectionState = 'disconnected';
+      persistentConnection = null;
+      
+      // Reject all pending callbacks
+      for (const [id, callback] of pendingCallbacks) {
+        callback.reject(new Error('Connection closed'));
+      }
+      pendingCallbacks.clear();
+    });
+  });
+}
+
+// Send command through persistent connection
+async function sendThroughPersistentConnection(command: any): Promise<string> {
+  const conn = await getPersistentConnection();
+  const messageId = messageIdCounter++;
+  
+  return new Promise((resolve, reject) => {
+    // Set timeout
+    const timeout = setTimeout(() => {
+      pendingCallbacks.delete(messageId);
+      reject(new Error('Command timeout'));
+    }, 5000);
+    
+    // Store callback with timeout handling
+    const wrappedCallback = {
+      resolve: (data: string) => {
+        clearTimeout(timeout);
+        lastSuccessfulCommand = Date.now();
+        resolve(data);
+      },
+      reject: (err: Error) => {
+        clearTimeout(timeout);
+        reject(err);
+      }
+    };
+    
+    pendingCallbacks.set(messageId, wrappedCallback);
+    
+    // Send command
+    const message = typeof command === 'string' ? command : JSON.stringify(command);
+    conn.write(message + '\n');
+  });
+}
+
+// Close persistent connection
+function closePersistentConnection() {
+  if (persistentConnection && !persistentConnection.destroyed) {
+    persistentConnection.destroy();
+    persistentConnection = null;
+  }
+}
 
 // Helper function to check if TCP server is available with caching
 async function checkTCPServer(port: number = 9999, useCache: boolean = true): Promise<boolean> {
   const now = Date.now();
+  
+  // If we had a successful command recently, assume we're still connected
+  if (useCache && now - lastSuccessfulCommand < COMMAND_SUCCESS_TTL) {
+    return true;
+  }
   
   // Use cached result if recent enough
   if (useCache && now - lastConnectionCheck < CONNECTION_CACHE_TTL) {
@@ -62,6 +184,12 @@ async function checkTCPServer(port: number = 9999, useCache: boolean = true): Pr
 
 // Actual TCP connection check
 async function performTCPCheck(port: number = 9999): Promise<boolean> {
+  // If we have a working persistent connection, we're connected
+  if (persistentConnection && !persistentConnection.destroyed) {
+    return true;
+  }
+  
+  // Otherwise, do a lightweight check without disrupting existing connections
   return new Promise((resolve) => {
     const client = new net.Socket();
     const timeout = setTimeout(() => {
@@ -84,13 +212,16 @@ async function performTCPCheck(port: number = 9999): Promise<boolean> {
 
 // Start background health monitoring
 function startHealthMonitoring() {
+  // Disabled for now - causing connection drops
+  return;
+  
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
   }
   
   healthCheckInterval = setInterval(async () => {
     try {
-      await checkTCPServer(9999, false); // Force check, don't use cache
+      await checkTCPServer(currentPort, false); // Force check, don't use cache
     } catch (error) {
       // Ignore errors in background monitoring
     }
@@ -101,21 +232,25 @@ function startHealthMonitoring() {
 function stopHealthMonitoring() {
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
-    healthCheckInterval = null;
+    healthCheckInterval = undefined;
   }
 }
 
 // Helper function to send commands to Elixir TCP server with retry logic
 async function sendToElixir(command: any, retries = 3): Promise<string> {
+  // Use persistent connection
   for (let i = 0; i < retries; i++) {
     try {
-      return await attemptSendToElixir(command);
+      return await sendThroughPersistentConnection(command);
     } catch (error) {
       if (i === retries - 1) throw error;
+      // On error, clear the persistent connection so it will reconnect
+      if (persistentConnection) {
+        persistentConnection.destroy();
+        persistentConnection = null;
+      }
       // Wait a bit before retrying
       await new Promise(resolve => setTimeout(resolve, 500));
-      // Force a fresh connection check on retry
-      await checkTCPServer(9999, false);
     }
   }
   throw new Error('Failed to send command after retries');
@@ -131,7 +266,7 @@ async function attemptSendToElixir(command: any): Promise<string> {
       reject(new Error('Connection timeout'));
     }, 5000);
     
-    client.connect(9999, 'localhost', () => {
+    client.connect(currentPort, 'localhost', () => {
       const message = typeof command === 'string' ? command : JSON.stringify(command);
       client.write(message + '\n');
     });
@@ -140,6 +275,7 @@ async function attemptSendToElixir(command: any): Promise<string> {
       responseData += data.toString();
       if (responseData.includes('\n')) {
         clearTimeout(timeout);
+        lastSuccessfulCommand = Date.now(); // Track successful command
         client.destroy();
         resolve(responseData.trim());
       }
@@ -332,6 +468,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case 'connect_scenic': {
       try {
         const { port = 9999 } = request.params.arguments as any;
+        
+        // If port is changing, close existing connection
+        if (port !== currentPort) {
+          closePersistentConnection();
+        }
+        
+        currentPort = port; // Update the global port
         const isRunning = await checkTCPServer(port);
         
         if (!isRunning) {
@@ -380,7 +523,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: `Scenic MCP Status:\n- Connection: Waiting for Scenic app\n- TCP Port: 9999\n- State: ${connectionState}\n\nThe MCP server is running but no Scenic application is connected. Start your Scenic app and the connection will be automatically detected.`,
+                text: `Scenic MCP Status:\n- Connection: Waiting for Scenic app\n- TCP Port: ${currentPort}\n- State: ${connectionState}\n\nThe MCP server is running but no Scenic application is connected. Start your Scenic app and the connection will be automatically detected.`,
               },
             ],
           };
@@ -394,7 +537,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Scenic MCP Status:\n- Connection: Active\n- TCP Port: 9999\n\nServer details:\n${JSON.stringify(data, null, 2)}`,
+              text: `Scenic MCP Status:\n- Connection: Active\n- TCP Port: ${currentPort}\n\nServer details:\n${JSON.stringify(data, null, 2)}`,
             },
           ],
         };
@@ -635,11 +778,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
 
+        // Format the viewport inspection response
+        let inspectionText = `Viewport Inspection Results\n${'='.repeat(50)}\n\n`;
+        
+        if (data.visual_description) {
+          inspectionText += `Visual Description: ${data.visual_description}\n`;
+          inspectionText += `Script Count: ${data.script_count}\n\n`;
+        }
+        
+        // Add semantic DOM information if available
+        if (data.semantic_elements && data.semantic_elements.count > 0) {
+          inspectionText += `Semantic DOM Summary\n${'-'.repeat(30)}\n`;
+          inspectionText += `Total Elements: ${data.semantic_elements.count}\n`;
+          inspectionText += `Clickable Elements: ${data.semantic_elements.clickable_count}\n`;
+          
+          if (data.semantic_elements.summary) {
+            inspectionText += `Summary: ${data.semantic_elements.summary}\n`;
+          }
+          
+          if (data.semantic_elements.by_type && Object.keys(data.semantic_elements.by_type).length > 0) {
+            inspectionText += `\nElements by Type:\n`;
+            for (const [type, count] of Object.entries(data.semantic_elements.by_type)) {
+              inspectionText += `  - ${type}: ${count}\n`;
+            }
+          }
+          
+          // List clickable elements with their positions
+          const clickableElements = data.semantic_elements.elements?.filter((e: any) => e.clickable) || [];
+          if (clickableElements.length > 0) {
+            inspectionText += `\nClickable Elements:\n`;
+            clickableElements.forEach((elem: any) => {
+              const posStr = elem.position ? ` at (${elem.position.x}, ${elem.position.y})` : '';
+              inspectionText += `  - ${elem.label || elem.type}${posStr}\n`;
+              if (elem.description) {
+                inspectionText += `    ${elem.description}\n`;
+              }
+            });
+          }
+        } else {
+          inspectionText += `\nNo semantic DOM information available.\n`;
+          inspectionText += `(Components need semantic annotations to appear here)\n`;
+        }
+        
         return {
           content: [
             {
               type: 'text',
-              text: data.description || 'No viewport information available',
+              text: inspectionText,
             },
           ],
         };

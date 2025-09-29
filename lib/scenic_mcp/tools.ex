@@ -3,7 +3,7 @@ defmodule ScenicMcp.Tools do
   require Logger
 
   def take_screenshot(params) do
-    Logger.info("Handling screenshot request: #{inspect(params)}")
+    # Handling screenshot request
 
     # Get optional parameters
     format = Map.get(params, "format", "path")  # "path" or "base64"
@@ -28,20 +28,20 @@ defmodule ScenicMcp.Tools do
       try do
         # Get the viewport's state to find drivers
         state = :sys.get_state(viewport, 5000)
-        Logger.info("Getting driver_pids from viewport state...")
+        # Getting driver_pids from viewport state
 
         # Get driver pids from the viewport state
         driver_pids = Map.get(state, :driver_pids, [])
 
-        Logger.info("Final driver_pids: #{inspect(driver_pids)}")
+        # Got driver_pids
 
         if length(driver_pids) > 0 do
           driver_pid = hd(driver_pids)
-          Logger.info("Using driver_pid: #{inspect(driver_pid)}")
+          # Using driver_pid for screenshot
 
           # Take the screenshot using the driver
           Scenic.Driver.Local.screenshot(driver_pid, path)
-          Logger.info("Screenshot saved to: #{path}")
+          # Screenshot saved
 
           # Return response based on format
           case format do
@@ -82,11 +82,11 @@ defmodule ScenicMcp.Tools do
 
           if length(updated_driver_pids) > 0 do
             driver_pid = hd(updated_driver_pids)
-            Logger.info("Using driver_pid after wait: #{inspect(driver_pid)}")
+            # Using driver_pid after wait
 
             # Take the screenshot using the driver
             Scenic.Driver.Local.screenshot(driver_pid, path)
-            Logger.info("Screenshot saved to: #{path}")
+            # Screenshot saved
 
             # Return response based on format
             case format do

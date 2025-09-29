@@ -1,7 +1,28 @@
 defmodule ScenicMcp.Probes do
   @moduledoc """
-  Helper functions that let us interact with Scenic.
+  Semantic DOM-like probes for Scenic applications.
+  
+  Provides both low-level Scenic interaction helpers and high-level semantic
+  DOM queries for AI-driven automation and testing.
+  
+  ## Low-level Scenic API
+  
+      ScenicMcp.Probes.viewport_pid()
+      ScenicMcp.Probes.script_table()
+      ScenicMcp.Probes.send_text("Hello")
+      
+  ## Semantic DOM API
+  
+      {:ok, dom} = ScenicMcp.Probes.get_semantic_dom()
+      {:ok, buffers} = ScenicMcp.Probes.query(:text_buffer)
+      ScenicMcp.Probes.inspect_dom()
   """
+  
+  alias Scenic.ViewPort
+
+  # ========================================================================
+  # Low-level Scenic interaction functions (existing API)
+  # ========================================================================
 
   def viewport_pid do
     case Process.whereis(:main_viewport) do
@@ -25,43 +46,71 @@ defmodule ScenicMcp.Probes do
       p when is_pid(p) ->
         p
       _otherwise ->
-        raise "Unable to find the :scenic_driver process. The Scenic supervision tree may not be running, or the viewport may be registered under a different name."
+        # Fallback: try to get it from the viewport if app hasn't updated to use :scenic_driver name yet
+        case Process.whereis(:main_viewport) do
+          nil ->
+            raise "Unable to find the :scenic_driver process. Make sure your driver is registered with name: :scenic_driver"
+          vp_pid ->
+            # Get the driver from the viewport state
+            state = :sys.get_state(vp_pid, 5000)
+            case Map.get(state, :driver_pids, []) do
+              [driver | _] -> 
+                IO.puts("Warning: Found driver via viewport. Please update your driver config to use name: :scenic_driver")
+                driver
+              [] ->
+                raise "No drivers found in viewport"
+            end
+        end
     end
   end
   
   def driver_pid_safe do
-    Process.whereis(:scenic_driver)
+    case Process.whereis(:scenic_driver) do
+      nil ->
+        # Fallback for apps that haven't updated yet
+        case Process.whereis(:main_viewport) do
+          nil -> nil
+          vp_pid ->
+            state = :sys.get_state(vp_pid, 5000)
+            case Map.get(state, :driver_pids, []) do
+              [driver | _] -> driver
+              [] -> nil
+            end
+        end
+      pid -> pid
+    end
   end
 
   def driver_state do
-    :sys.get_state(driver_pid(), 5000)
+    driver = driver_pid()
+    :sys.get_state(driver, 5000)
   end
 
   def script_table do
     :ets.tab2list(viewport_state().script_table)
   end
 
-
   def send_input(input) do
-    Scenic.Driver.send_input(driver_state(), input)
+    driver_struct = driver_state()
+    Scenic.Driver.send_input(driver_struct, input)
   end
 
   @doc """
   Send text input to the application. Each character is sent as a codepoint event.
   """
   def send_text(text) when is_binary(text) do
-    driver_state = driver_state()
+    driver_struct = driver_state()
     
     text
     |> String.graphemes()
     |> Enum.each(fn char ->
       case char_to_key_event(char) do
         {:ok, key_event} ->
-          Scenic.Driver.send_input(driver_state, key_event)
+          Scenic.Driver.send_input(driver_struct, key_event)
         :error ->
           # For unsupported characters, still try codepoint
           codepoint = char |> String.to_charlist() |> List.first()
-          Scenic.Driver.send_input(driver_state, {:codepoint, {codepoint, []}})
+          Scenic.Driver.send_input(driver_struct, {:codepoint, {codepoint, []}})
       end
     end)
     
@@ -146,6 +195,7 @@ defmodule ScenicMcp.Probes do
       "." -> {:ok, {:key, {:key_period, 1, []}}}
       "," -> {:ok, {:key, {:key_comma, 1, []}}}
       "?" -> {:ok, {:key, {:key_slash, 1, [:shift]}}}
+      "-" -> {:ok, {:key, {:key_minus, 1, []}}}
       
       # Fall back to codepoint for unsupported characters
       _ -> :error
@@ -156,14 +206,14 @@ defmodule ScenicMcp.Probes do
   Send key input to the application. Supports special keys and modifiers.
   """
   def send_keys(key, modifiers \\ []) when is_binary(key) and is_list(modifiers) do
-    driver_state = driver_state()
+    driver_struct = driver_state()
     key_atom = normalize_key(key)
     
     # Send key press
-    Scenic.Driver.send_input(driver_state, {:key, {key_atom, 1, modifiers}})
+    Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 1, modifiers}})
     
     # Send key release  
-    Scenic.Driver.send_input(driver_state, {:key, {key_atom, 0, modifiers}})
+    Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 0, modifiers}})
     
     :ok
   end
@@ -182,6 +232,54 @@ defmodule ScenicMcp.Probes do
       %{error: _reason} -> nil
       _other -> nil
     end
+  end
+
+  @doc """
+  Send mouse move event to move the cursor to specified coordinates.
+  """
+  def send_mouse_move(x, y) when is_number(x) and is_number(y) do
+    driver_struct = driver_state()
+    Scenic.Driver.send_input(driver_struct, {:cursor_pos, {round(x), round(y)}})
+    :ok
+  end
+
+  @doc """
+  Send mouse click event at specified coordinates.
+  
+  Options:
+  - button: :left (default), :right, or :middle
+  - action: :press (default), :release, or :click (does press then release)
+  """
+  def send_mouse_click(x, y, opts \\ []) when is_number(x) and is_number(y) do
+    driver_struct = driver_state()
+    button = Keyword.get(opts, :button, :left)
+    action = Keyword.get(opts, :action, :click)
+    
+    button_atom = case button do
+      :left -> :btn_left
+      :right -> :btn_right
+      :middle -> :btn_middle
+      b when is_atom(b) -> b
+      _ -> :btn_left
+    end
+    
+    # Ensure coordinates are integers
+    int_x = round(x)
+    int_y = round(y)
+    
+    case action do
+      :press ->
+        Scenic.Driver.send_input(driver_struct, {:cursor_button, {button_atom, 1, [], {int_x, int_y}}})
+      :release ->
+        Scenic.Driver.send_input(driver_struct, {:cursor_button, {button_atom, 0, [], {int_x, int_y}}})
+      :click ->
+        # Send both press and release for a complete click
+        Scenic.Driver.send_input(driver_struct, {:cursor_button, {button_atom, 1, [], {int_x, int_y}}})
+        Process.sleep(10)  # Small delay between press and release
+        Scenic.Driver.send_input(driver_struct, {:cursor_button, {button_atom, 0, [], {int_x, int_y}}})
+    end
+    
+    :ok
   end
 
   # Helper function to normalize key names to atoms
@@ -220,5 +318,257 @@ defmodule ScenicMcp.Probes do
           :key_unknown
         end
     end
+  end
+
+  # ========================================================================
+  # Semantic DOM API - High-level semantic queries
+  # ========================================================================
+
+  @doc """
+  Get the complete semantic DOM structure.
+  
+  Returns a hierarchical, DOM-like structure representing all semantic
+  elements in the viewport.
+  
+  ## Examples
+  
+      {:ok, dom} = ScenicMcp.Probes.get_semantic_dom()
+      IO.inspect(dom.summary)
+  """
+  def get_semantic_dom(viewport_name \\ :main_viewport) do
+    case get_viewport_info(viewport_name) do
+      {:ok, viewport} ->
+        {:ok, build_semantic_dom(viewport)}
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+  
+  @doc """
+  Get only visible components in DOM structure.
+  """
+  def get_visible_dom(viewport_name \\ :main_viewport) do
+    case get_semantic_dom(viewport_name) do
+      {:error, reason} -> {:error, reason}
+      {:ok, dom} ->
+        visible_components = Enum.filter(dom.components, & &1.visible)
+        
+        {:ok, %{dom | 
+          components: visible_components,
+          summary: recalculate_summary(visible_components)
+        }}
+    end
+  end
+  
+  @doc """
+  Query elements by semantic type.
+  
+  ## Examples
+  
+      {:ok, buffers} = ScenicMcp.Probes.query(:text_buffer)
+      {:ok, buttons} = ScenicMcp.Probes.query(:button)
+      {:ok, editable} = ScenicMcp.Probes.query(:editable)
+  """
+  def query(type, viewport_name \\ :main_viewport) do
+    case get_semantic_dom(viewport_name) do
+      {:error, reason} -> {:error, reason}
+      {:ok, dom} ->
+        elements = dom.components
+        |> Enum.flat_map(& &1.elements)
+        |> filter_by_type(type)
+        
+        {:ok, elements}
+    end
+  end
+  
+  @doc """
+  Get content from all text buffers.
+  
+  Returns a map of buffer_id -> content for easy access.
+  """
+  def get_all_buffer_content(viewport_name \\ :main_viewport) do
+    case query(:text_buffer, viewport_name) do
+      {:ok, buffers} ->
+        content_map = buffers
+        |> Enum.filter(& &1.semantic.type == :text_buffer)
+        |> Enum.into(%{}, fn buf ->
+          {buf.semantic.buffer_id, buf.content}
+        end)
+        
+        {:ok, content_map}
+        
+      {:error, reason} -> {:error, reason}
+    end
+  end
+  
+  @doc """
+  Get a pretty-printed representation of the semantic DOM.
+  """
+  def inspect_dom(viewport_name \\ :main_viewport) do
+    case get_semantic_dom(viewport_name) do
+      {:error, reason} -> 
+        IO.puts("Error: #{reason}")
+        :error
+        
+      {:ok, dom} ->
+        IO.puts("=== Semantic DOM Structure ===")
+        IO.puts("Viewport: #{dom.viewport.name} (#{elem(dom.viewport.size, 0)}x#{elem(dom.viewport.size, 1)})")
+        IO.puts("Components: #{dom.summary.total_components}")
+        IO.puts("Total Elements: #{dom.summary.total_elements}")
+        
+        IO.puts("\nBy Type:")
+        Enum.each(dom.summary.by_type, fn {type, count} ->
+          IO.puts("  #{type}: #{count}")
+        end)
+        
+        IO.puts("\nComponents:")
+        Enum.each(dom.components, fn comp ->
+          visibility = if comp.visible, do: "visible", else: "hidden"
+          IO.puts("  [#{comp.id}] (#{visibility}) - #{length(comp.elements)} elements")
+          
+          Enum.each(comp.elements, fn elem ->
+            case elem.type do
+              :text_buffer ->
+                content_preview = String.slice(elem.content, 0, 30)
+                content_preview = if String.length(elem.content) > 30, do: content_preview <> "...", else: content_preview
+                IO.puts("    └─ Buffer #{elem.semantic.buffer_id}: #{inspect(content_preview)}")
+                
+              :button ->
+                IO.puts("    └─ Button: #{elem.semantic.label}")
+                
+              _ ->
+                IO.puts("    └─ #{elem.type}: #{inspect(elem.id)}")
+            end
+          end)
+        end)
+        
+        :ok
+    end
+  end
+  
+  # Private helper functions for semantic DOM
+  
+  defp get_viewport_info(viewport_name) do
+    case Process.whereis(viewport_name) do
+      nil -> {:error, "ViewPort #{viewport_name} not found"}
+      pid -> ViewPort.info(pid)
+    end
+  end
+  
+  defp build_semantic_dom(viewport) do
+    # Get all semantic data
+    semantic_entries = :ets.tab2list(viewport.semantic_table)
+    
+    # Build components list
+    components = semantic_entries
+    |> Enum.filter(fn {_key, data} -> map_size(data.elements) > 0 end)
+    |> Enum.map(fn {graph_key, data} -> build_component(graph_key, data, viewport) end)
+    
+    # Calculate summary
+    summary = calculate_summary(components)
+    
+    %{
+      viewport: %{
+        name: viewport.name,
+        size: viewport.size
+      },
+      timestamp: :os.system_time(:millisecond),
+      components: components,
+      summary: summary
+    }
+  end
+  
+  defp build_component(graph_key, data, viewport) do
+    # Try to determine if component is visible
+    visible = determine_visibility(graph_key, viewport)
+    
+    # Build elements list
+    elements = data.elements
+    |> Map.values()
+    |> Enum.map(&build_element/1)
+    
+    %{
+      id: graph_key,
+      type: :component,
+      visible: visible,
+      timestamp: data[:timestamp],
+      elements: elements
+    }
+  end
+  
+  defp build_element(elem) do
+    %{
+      id: elem.id,
+      type: elem.semantic.type,
+      semantic: elem.semantic,
+      content: elem.content || "",
+      properties: extract_properties(elem)
+    }
+  end
+  
+  defp extract_properties(elem) do
+    properties = %{}
+    
+    # Extract common properties from semantic data
+    properties = if elem.semantic[:editable] do
+      Map.put(properties, :editable, elem.semantic.editable)
+    else
+      properties
+    end
+    
+    properties = if elem.semantic[:role] do
+      Map.put(properties, :role, elem.semantic.role)
+    else
+      properties
+    end
+    
+    properties = if elem.semantic[:label] do
+      Map.put(properties, :label, elem.semantic.label)
+    else
+      properties
+    end
+    
+    properties
+  end
+  
+  defp determine_visibility(graph_key, viewport) do
+    # Simple heuristic: if it's in the script table, it's probably visible
+    case :ets.lookup(viewport.script_table, graph_key) do
+      [] -> false  # No script = not being rendered
+      [{^graph_key, _script}] -> true
+    end
+  end
+  
+  defp calculate_summary(components) do
+    total_elements = components
+    |> Enum.map(fn comp -> length(comp.elements) end)
+    |> Enum.sum()
+    
+    by_type = components
+    |> Enum.flat_map(fn comp -> comp.elements end)
+    |> Enum.group_by(fn elem -> elem.type end)
+    |> Enum.into(%{}, fn {type, elements} -> {type, length(elements)} end)
+    
+    %{
+      total_components: length(components),
+      total_elements: total_elements,
+      by_type: by_type
+    }
+  end
+  
+  defp recalculate_summary(components) do
+    calculate_summary(components)
+  end
+  
+  defp filter_by_type(elements, :editable) do
+    Enum.filter(elements, fn elem ->
+      elem.properties[:editable] == true
+    end)
+  end
+  
+  defp filter_by_type(elements, type) do
+    Enum.filter(elements, fn elem ->
+      elem.type == type
+    end)
   end
 end

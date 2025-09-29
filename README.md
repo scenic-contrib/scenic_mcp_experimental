@@ -121,7 +121,7 @@ Capture a screenshot of the current Scenic display.
 {
   "action": "send_keys",
   "key": "c",
-  "modifiers": ["ctrl"]
+  "modifiers": [:ctrl]
 }
 ```
 

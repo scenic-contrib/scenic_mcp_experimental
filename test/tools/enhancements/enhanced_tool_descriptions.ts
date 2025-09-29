@@ -95,7 +95,7 @@ export const enhancedToolDescriptions = [
     examples: [
       'Type "hello world" → {text: "hello world"}',
       'Press Enter → {key: "enter"}',
-      'Copy shortcut → {key: "c", modifiers: ["ctrl"]}',
+      'Copy shortcut → {key: "c", modifiers: [:ctrl]}',
       'Navigate up → {key: "up"}'
     ]
   },
