@@ -9,7 +9,7 @@
  * All server setup is in index.ts
  */
 
-import { getConnectionContext, getManagedProcess, startApp, stopApp, ConnectionContext } from './connection.js';
+import { getConnectionContext } from './connection.js';
 
 // Get connection context for making requests to Elixir
 const conn = getConnectionContext();
@@ -22,7 +22,7 @@ export function getToolDefinitions() {
   return [
     {
       name: 'connect_scenic',
-      description: 'CONNECTION SETUP: Establish connection to a running Scenic application. ALWAYS use this first before other tools to ensure the app is reachable. Essential for starting any Scenic interaction session.',
+      description: 'CONNECTION SETUP: Establish the connection to the ScenicMCP GenServer running inside our Scenic app. Use this first before other interaction tools.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -36,7 +36,7 @@ export function getToolDefinitions() {
     },
     {
       name: 'get_scenic_status',
-      description: 'CONNECTION STATUS: Check current connection status and get detailed information about the Scenic application. Use for troubleshooting connectivity issues and verifying app state.',
+      description: 'CONNECTION STATUS: Check if we are connected to a Scenic app and fetch details.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -138,35 +138,6 @@ export function getToolDefinitions() {
       },
     },
     {
-      name: 'start_app',
-      description: 'PROCESS MANAGEMENT: Launch a Scenic application from its directory path. Use when you need to start the app before connecting to it. Requires the absolute path to a Scenic application directory containing mix.exs.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'Path to the Scenic application directory',
-          },
-        },
-      },
-    },
-    {
-      name: 'stop_app',
-      description: 'PROCESS MANAGEMENT: Stop the currently managed Scenic application process. Use for cleanup, restarting apps, or ending development sessions.',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
-    },
-    {
-      name: 'app_status',
-      description: 'PROCESS MONITORING: Get status of the managed Scenic application process, including running state and connection info. Essential for debugging process issues and checking if the app is still running.',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
-    },
-    {
       name: 'get_app_logs',
       description: 'DEBUGGING: Retrieve recent log output from the Scenic application. Essential for debugging crashes, errors, and understanding app behavior. Use when someone reports "the app crashed" or "something\'s wrong".',
       inputSchema: {
@@ -203,14 +174,6 @@ export async function handleToolCall(name: string, args: any) {
       return await handleInspectViewport(args);
     case 'take_screenshot':
       return await handleTakeScreenshot(args);
-    case 'start_app':
-      return await handleStartApp(args);
-    case 'stop_app':
-      return await handleStopApp(args);
-    case 'app_status':
-      return await handleAppStatus(args);
-    case 'get_app_logs':
-      return await handleGetAppLogs(args);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -508,7 +471,7 @@ async function handleInspectViewport(args: any) {
     }
 
     const command = {
-      action: 'get_scenic_graph',
+      action: 'inspect_viewport',
     };
 
     const response = await conn.sendToElixir(command);
@@ -579,171 +542,6 @@ async function handleInspectViewport(args: any) {
         {
           type: 'text',
           text: `Error inspecting viewport: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-async function handleStartApp(args: any) {
-  try {
-    const { path: appPath } = args;
-
-    if (!appPath) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: 'Error: path parameter is required to start a Scenic application',
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const result = await startApp(appPath);
-
-    if (!result.success) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: result.error || 'Failed to start Scenic application',
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Scenic application started successfully!\nPath: ${appPath}\nPID: ${result.pid}\n\nWait a moment for the TCP server to initialize, then use connect_scenic to interact with it.`,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error starting app: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-async function handleStopApp(args: any) {
-  try {
-    const result = await stopApp();
-
-    if (!result.success) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: 'No Scenic application is currently running.',
-          },
-        ],
-      };
-    }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Scenic application stopped.\nPath: ${result.path}`,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error stopping app: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-async function handleAppStatus(args: any) {
-  try {
-    const { managedProcess, processPath } = getManagedProcess();
-
-    if (!managedProcess) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: 'Application Status: Stopped\nNo Scenic application is currently managed.',
-          },
-        ],
-      };
-    }
-
-    const isRunning = !managedProcess.killed;
-    const tcpConnected = isRunning ? await conn.checkTCPServer() : false;
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Application Status: ${isRunning ? 'Running' : 'Stopped'}\nPath: ${processPath}\nPID: ${managedProcess.pid}\nTCP Server: ${tcpConnected ? 'Connected' : 'Not Connected'}\n\n${tcpConnected ? 'The application is ready for scenic commands.' : 'Waiting for TCP server to initialize...'}`,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error getting status: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-async function handleGetAppLogs(args: any) {
-  try {
-    const { lines = 100 } = args;
-    const { processLogs } = getManagedProcess();
-
-    if (processLogs.length === 0) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: 'No logs available. Either no app is running or no output has been captured yet.',
-          },
-        ],
-      };
-    }
-
-    const recentLogs = processLogs.slice(-lines);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Recent logs (${recentLogs.length} lines):\n\n${recentLogs.join('\n')}`,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error getting logs: ${error instanceof Error ? error.message : 'Unknown error'}`,
         },
       ],
       isError: true,

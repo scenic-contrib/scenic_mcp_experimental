@@ -13,8 +13,6 @@ import { spawn, ChildProcess } from 'child_process';
 
 let managedProcess: ChildProcess | null = null;
 let processPath: string | null = null;
-let processLogs: string[] = [];
-const MAX_LOG_LINES = 1000;
 
 // ========================================================================
 // Connection State Management
@@ -206,15 +204,13 @@ async function performTCPCheck(port: number = 9999): Promise<boolean> {
 // ========================================================================
 
 export function getManagedProcess() {
-  return { managedProcess, processPath, processLogs: [...processLogs] };
+  return { managedProcess, processPath };
 }
 
 export async function startApp(appPath: string): Promise<{ success: boolean; pid?: number; error?: string }> {
   if (managedProcess && !managedProcess.killed) {
     return { success: false, error: `A Scenic application is already running at ${processPath}` };
   }
-
-  processLogs = [];
 
   const env = { ...process.env, MIX_ENV: 'dev' };
   managedProcess = spawn('elixir', ['-S', 'mix', 'run', '--no-halt'], {
@@ -225,33 +221,12 @@ export async function startApp(appPath: string): Promise<{ success: boolean; pid
 
   processPath = appPath;
 
-  if (managedProcess.stdout) {
-    managedProcess.stdout.on('data', (data) => {
-      const lines = data.toString().split('\n').filter((line: string) => line.trim());
-      processLogs.push(...lines);
-      if (processLogs.length > MAX_LOG_LINES) {
-        processLogs = processLogs.slice(-MAX_LOG_LINES);
-      }
-    });
-  }
-
-  if (managedProcess.stderr) {
-    managedProcess.stderr.on('data', (data) => {
-      const lines = data.toString().split('\n').filter((line: string) => line.trim());
-      processLogs.push(...lines.map((line: string) => `[ERROR] ${line}`));
-      if (processLogs.length > MAX_LOG_LINES) {
-        processLogs = processLogs.slice(-MAX_LOG_LINES);
-      }
-    });
-  }
-
   managedProcess.on('error', (err) => {
     console.error(`[Scenic App] Process error: ${err}`);
   });
 
   managedProcess.on('exit', (code) => {
     console.log(`[Scenic App] Process exited with code ${code}`);
-    processLogs.push(`[SYSTEM] Process exited with code ${code}`);
     managedProcess = null;
     processPath = null;
   });
