@@ -70,7 +70,10 @@ def scenic_viewport_config() do
 end
 ```
 
-Note that `name` here defines the atom which will become the registered process name for the ViewPort process. We need to know this in order to find the pid of this process in order to interact with the ViewPort, and our solution was to look for this specific name `main_viewport` so you need to set this in your config as above for ScenicMCP to work.
+Note that `name` here defines the atom which will become the registered process name for the ViewPort and Driver processes. We need to know this in order to find the pid of this process in order to interact with the ViewPort, and our solution was to look for this specific name `main_viewport` so you need to set this in your config as above for ScenicMCP to work.
+
+Viewport name: `:main_viewport`
+Driver name: `:scenic_driver`
 
 ### 3. Install TypeScript dependencies
 
