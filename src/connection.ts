@@ -1,18 +1,10 @@
 /**
- * Connection and process management for Scenic MCP
+ * Connection management for Scenic MCP
  *
- * Handles TCP connections to Elixir server, process spawning, and state management
+ * Handles persistent TCP connections to Elixir server with simple request-response pattern.
  */
 
 import * as net from 'net';
-import { spawn, ChildProcess } from 'child_process';
-
-// ========================================================================
-// Process Management State
-// ========================================================================
-
-let managedProcess: ChildProcess | null = null;
-let processPath: string | null = null;
 
 // ========================================================================
 // Connection State Management
@@ -31,8 +23,6 @@ let currentPort = 9999;
 
 let persistentConnection: net.Socket | null = null;
 let connectionBuffer = '';
-let pendingCallbacks: Map<number, {resolve: (data: string) => void, reject: (err: Error) => void}> = new Map();
-let messageIdCounter = 0;
 
 // ========================================================================
 // Connection Functions
@@ -48,79 +38,54 @@ function getPersistentConnection(): Promise<net.Socket> {
     persistentConnection = new net.Socket();
 
     persistentConnection.connect(currentPort, 'localhost', () => {
-      console.log(`Persistent connection established to port ${currentPort}`);
       connectionState = 'connected';
       lastSuccessfulCommand = Date.now();
       resolve(persistentConnection!);
     });
 
-    persistentConnection.on('data', (data) => {
-      connectionBuffer += data.toString();
-
-      let lines = connectionBuffer.split('\n');
-      connectionBuffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.trim()) {
-          const entry = pendingCallbacks.entries().next().value;
-          if (entry) {
-            const [callbackId, callback] = entry;
-            pendingCallbacks.delete(callbackId);
-            callback.resolve(line.trim());
-          }
-        }
-      }
-    });
-
     persistentConnection.on('error', (err) => {
-      console.error('Persistent connection error:', err);
       connectionState = 'disconnected';
       persistentConnection = null;
-
-      for (const [id, callback] of pendingCallbacks) {
-        callback.reject(err);
-      }
-      pendingCallbacks.clear();
-
       reject(err);
     });
 
     persistentConnection.on('close', () => {
-      console.log('Persistent connection closed');
       connectionState = 'disconnected';
       persistentConnection = null;
-
-      for (const [id, callback] of pendingCallbacks) {
-        callback.reject(new Error('Connection closed'));
-      }
-      pendingCallbacks.clear();
     });
   });
 }
 
 async function sendThroughPersistentConnection(command: any): Promise<string> {
   const conn = await getPersistentConnection();
-  const messageId = messageIdCounter++;
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      pendingCallbacks.delete(messageId);
-      reject(new Error('Command timeout'));
+      reject(new Error('Command timeout after 5000ms'));
     }, 5000);
 
-    const wrappedCallback = {
-      resolve: (data: string) => {
+    // Set up one-time data handler for this request
+    const onData = (data: Buffer) => {
+      connectionBuffer += data.toString();
+
+      const lines = connectionBuffer.split('\n');
+
+      // If we have at least one complete line, process it
+      if (lines.length > 1) {
+        const response = lines[0].trim();
+        connectionBuffer = lines.slice(1).join('\n');
+
         clearTimeout(timeout);
         lastSuccessfulCommand = Date.now();
-        resolve(data);
-      },
-      reject: (err: Error) => {
-        clearTimeout(timeout);
-        reject(err);
+
+        // Remove this handler after getting response
+        conn.off('data', onData);
+
+        resolve(response);
       }
     };
 
-    pendingCallbacks.set(messageId, wrappedCallback);
+    conn.on('data', onData);
 
     const message = typeof command === 'string' ? command : JSON.stringify(command);
     conn.write(message + '\n');
@@ -197,66 +162,6 @@ async function performTCPCheck(port: number = 9999): Promise<boolean> {
       resolve(false);
     });
   });
-}
-
-// ========================================================================
-// Process Management Functions
-// ========================================================================
-
-export function getManagedProcess() {
-  return { managedProcess, processPath };
-}
-
-export async function startApp(appPath: string): Promise<{ success: boolean; pid?: number; error?: string }> {
-  if (managedProcess && !managedProcess.killed) {
-    return { success: false, error: `A Scenic application is already running at ${processPath}` };
-  }
-
-  const env = { ...process.env, MIX_ENV: 'dev' };
-  managedProcess = spawn('elixir', ['-S', 'mix', 'run', '--no-halt'], {
-    cwd: appPath,
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  processPath = appPath;
-
-  managedProcess.on('error', (err) => {
-    console.error(`[Scenic App] Process error: ${err}`);
-  });
-
-  managedProcess.on('exit', (code) => {
-    console.log(`[Scenic App] Process exited with code ${code}`);
-    managedProcess = null;
-    processPath = null;
-  });
-
-  await new Promise(resolve => setTimeout(resolve, 2000));
-
-  if (!managedProcess || managedProcess.killed) {
-    return { success: false, error: 'Process exited immediately' };
-  }
-
-  return { success: true, pid: managedProcess.pid };
-}
-
-export async function stopApp(): Promise<{ success: boolean; path?: string }> {
-  if (!managedProcess) {
-    return { success: false };
-  }
-
-  managedProcess.kill('SIGTERM');
-  await new Promise(resolve => setTimeout(resolve, 1000));
-
-  if (!managedProcess.killed) {
-    managedProcess.kill('SIGKILL');
-  }
-
-  const stoppedPath = processPath;
-  managedProcess = null;
-  processPath = null;
-
-  return { success: true, path: stoppedPath || undefined };
 }
 
 // ========================================================================

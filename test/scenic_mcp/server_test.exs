@@ -61,38 +61,38 @@ defmodule ScenicMcp.ServerTest do
       response = send_tcp_command(port, command)
 
       assert is_map(response)
-      assert String.contains?(response["error"], "Failed to get scenic graph")
+      assert String.contains?(response["error"], "Unable to find Scenic viewport process")
     end
 
     test "send_keys returns error when no driver available", %{port: port} do
       command = %{"action" => "send_keys", "text" => "hello"}
       response = send_tcp_command(port, command)
-      
+
       assert is_map(response)
-      assert response["error"] == "No driver found"
+      assert String.contains?(response["error"], "Unable to find Scenic driver process")
     end
 
     test "send_mouse_move returns error when no driver available", %{port: port} do
       command = %{"action" => "send_mouse_move", "x" => 100, "y" => 200}
       response = send_tcp_command(port, command)
-      
+
       assert is_map(response)
-      assert response["error"] == "No driver found"
+      assert String.contains?(response["error"], "Unable to find Scenic driver process")
     end
 
     test "take_screenshot returns error when no viewport available", %{port: port} do
       command = %{"action" => "take_screenshot"}
       response = send_tcp_command(port, command)
-      
+
       assert is_map(response)
-      assert response["error"] == "No viewport found"
+      assert String.contains?(response["error"], "Unable to find Scenic viewport process")
     end
   end
 
   describe "driver detection" do
-    test "find_scenic_driver returns nil when no driver exists" do
-      result = ScenicMcp.Tools.find_scenic_driver()
-      assert result == nil
+    test "driver_pid returns error when no driver exists" do
+      result = ScenicMcp.Tools.driver_pid()
+      assert {:error, _reason} = result
     end
   end
 

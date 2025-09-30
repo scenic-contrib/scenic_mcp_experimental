@@ -39,7 +39,6 @@ defmodule ScenicMcp.Server do
   def handle_continue(:accept, %{listen_socket: listen_socket} = state) do
     case :gen_tcp.accept(listen_socket) do
       {:ok, client} ->
-        # Logger.info("Client connected to ScenicMCP")
         {:noreply, Map.put(state, :client, client), {:continue, :loop}}
 
       {:error, reason} ->
@@ -51,8 +50,6 @@ defmodule ScenicMcp.Server do
   def handle_continue(:loop, %{client: client} = state) do
     case :gen_tcp.recv(client, 0) do
       {:ok, data} ->
-        Logger.debug("Received: #{inspect(data)}")
-
         # Parse the incoming data
         response = parse_message(String.trim(data))
 
@@ -89,27 +86,31 @@ defmodule ScenicMcp.Server do
         %{status: "ok", message: "Scenic MCP Server is running"}
 
       {:ok, %{"action" => "inspect_viewport"} = _command} ->
-        ScenicMcp.Tools.handle_get_scenic_graph()
+        handle_tool_result(ScenicMcp.Tools.handle_get_scenic_graph())
 
       {:ok, %{"action" => "send_keys"} = command} ->
-        ScenicMcp.Tools.handle_send_keys(command)
+        handle_tool_result(ScenicMcp.Tools.handle_send_keys(command))
 
       {:ok, %{"action" => "send_mouse_move"} = command} ->
-        ScenicMcp.Tools.handle_mouse_move(command)
+        handle_tool_result(ScenicMcp.Tools.handle_mouse_move(command))
 
       {:ok, %{"action" => "send_mouse_click"} = command} ->
-        ScenicMcp.Tools.handle_mouse_click(command)
+        handle_tool_result(ScenicMcp.Tools.handle_mouse_click(command))
 
       {:ok, %{"action" => "take_screenshot"} = command} ->
-        ScenicMcp.Tools.take_screenshot(command)
+        handle_tool_result(ScenicMcp.Tools.take_screenshot(command))
 
       {:ok, command} ->
-        Logger.error "#{__MODULE__} recv'd an unknown command: #{inspect command}"
+        Logger.error("#{__MODULE__} received unknown command: #{inspect(command)}")
         %{error: "Unknown command", command: command}
 
       {:error, _} ->
-        Logger.error "#{__MODULE__} recv'd some invalid JSON: #{inspect json_string}"
+        Logger.error("#{__MODULE__} received invalid JSON: #{inspect(json_string)}")
         %{error: "Invalid JSON"}
     end
   end
+
+  # Convert {:ok, result} | {:error, reason} tuples to maps for JSON encoding
+  defp handle_tool_result({:ok, result}), do: result
+  defp handle_tool_result({:error, reason}), do: %{error: reason}
 end
