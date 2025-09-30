@@ -1,19 +1,34 @@
-# Scenic MCP - Input Control for Scenic Applications
+# Scenic MCP - AI Control for Scenic Applications
 
-A Model Context Protocol (MCP) server that enables external keyboard and mouse input injection into Scenic GUI applications.
+A Model Context Protocol (MCP) server that enables AI assistants to interact with Scenic GUI applications through keyboard, mouse, and visual feedback.
 
 ## Features
 
-- **Keyboard Input**: Send text and special keys to Scenic applications
+- **Keyboard Input**: Send text and special keys with modifier support
 - **Mouse Control**: Move cursor and click at specific coordinates
-- **Visual Feedback**: Get descriptions of what's displayed on screen (v0.2.0)
-- **MCP Integration**: Works with any MCP-compatible client (Claude Desktop, etc.)
-- **Real-time Communication**: TCP-based connection for low-latency input
-- **Scenic Compatible**: Uses proper Scenic ViewPort input routing
+- **Visual Feedback**: Inspect viewport structure and capture screenshots
+- **MCP Integration**: Works with any MCP-compatible client (Claude Desktop, Claude Code, etc.)
+
+## Available Tools
+
+### Connection & Status
+1. **`connect_scenic`** - Establish connection to running Scenic app
+2. **`get_scenic_status`** - Check connection status and server info
+3. **`app_status`** - Get managed app process status
+
+### User Input
+4. **`send_keys`** - Send keyboard input (text, special keys, modifiers)
+5. **`send_mouse_move`** - Move cursor to coordinates
+6. **`send_mouse_click`** - Click at coordinates (left/right/middle button)
+
+### Visual Feedback
+7. **`inspect_viewport`** - Get text description of viewport structure
+8. **`take_screenshot`** - Capture PNG screenshot (path or base64)
 
 ## Installation
 
-1. **Add to your Scenic application's `mix.exs`:**
+### 1. Add to your Scenic app's mix.exs
+
 ```elixir
 defp deps do
   [
@@ -22,24 +37,32 @@ defp deps do
 end
 ```
 
-2. **Configure your Scenic viewport with proper naming:**
+### 2. Configure viewport and driver naming
 
-**IMPORTANT**: For scenic_mcp to work correctly, your Scenic application MUST name both the viewport and driver. Update your `scenic_config()` function:
+**CRITICAL**: scenic_mcp requires named viewport and driver processes.
+
+In your supervision tree, where you're starting the top Scenic process, you pass in the viewport options. This needs to be updated:
 
 ```elixir
-def scenic_config() do
+children = [
+  ...other processes here,
+  {Scenic, [scenic_viewport_config()]}
+]
+```
+
+where `scenic_viewport_config` is simply a function returning the opts list:
+
+```elixir
+def scenic_viewport_config() do
   [
-    name: :main_viewport,  # Required for viewport lookup
-    size: @default_resolution,
+    name: :main_viewport,  # Required!
+    size: {800, 600},
     default_scene: {YourApp.RootScene, []},
     drivers: [
       [
-        name: :scenic_driver,  # Required for driver lookup
+        name: :scenic_driver,  # Required!
         module: Scenic.Driver.Local,
-        window: [
-          title: "Your App",
-          resizeable: true
-        ],
+        window: [title: "Your App", resizeable: true],
         on_close: :stop_system
       ]
     ]
@@ -47,94 +70,99 @@ def scenic_config() do
 end
 ```
 
-3. **Install Node.js dependencies and build:**
+Note that `name` here defines the atom which will become the registered process name for the ViewPort process. We need to know this in order to find the pid of this process in order to interact with the ViewPort, and our solution was to look for this specific name `main_viewport` so you need to set this in your config as above for ScenicMCP to work.
+
+### 3. Install TypeScript dependencies
+
 ```bash
 cd scenic_mcp
 npm install
 npm run build
 ```
 
-4. **Configure for Claude Code:**
+### 4. Configure for Claude Code
+
+**Option A: Using CLI (Recommended)**
+
 ```bash
-# Add the MCP server to Claude Code
+# Add scenic-mcp server
 claude mcp add scenic-mcp /path/to/scenic_mcp/dist/index.js
 
-# Verify it was added
+# Verify
 claude mcp list
 ```
 
-**Note:** Replace `/path/to/scenic_mcp` with the actual path to your scenic_mcp directory.
+**Option B: Manual Configuration**
+
+Edit `~/.claude.json` to add the scenic-mcp server to your project:
+
+```json
+{
+  "projects": {
+    "/path/to/your/project": {
+      "mcpServers": {
+        "scenic-mcp": {
+          "type": "stdio",
+          "command": "/path/to/scenic_mcp/dist/index.js",
+          "args": [],
+          "env": {}
+        }
+      }
+    }
+  }
+}
+```
+
+**Optional: Tidewave MCP Configuration**
+
+Tidewave provides runtime introspection for Elixir/Phoenix apps (logs, SQL queries, code evaluation, docs). If your project includes Tidewave (Flamelex/Quillex do), add this to the same project config:
+
+```json
+{
+  "projects": {
+    "/path/to/your/project": {
+      "mcpServers": {
+        "scenic-mcp": {
+          "type": "stdio",
+          "command": "/path/to/scenic_mcp/dist/index.js",
+          "args": [],
+          "env": {}
+        },
+        "tidewave": {
+          "type": "http",
+          "url": "http://localhost:4000/tidewave/mcp"
+        }
+      }
+    }
+  }
+}
+```
+
+**Important:**
+- The Tidewave server runs on the same port as your Phoenix app (default 4000)
+- Restart Claude Code after configuration changes
+- See [Tidewave docs](https://hexdocs.pm/tidewave/mcp.html) for more info
 
 ## Usage
 
-### Using with Claude Code
+### Starting Your Scenic App
 
-Once configured, you can use the MCP tools directly within Claude Code conversations:
+Scenic apps with scenic_mcp start the TCP server automatically on port 9999:
 
-1. **Start your Scenic application** (with the ScenicMcp.Server running on port 9999)
-2. **Use MCP tools in Claude Code:**
-   - `connect_scenic` - Test connection to your Scenic app
-   - `get_scenic_status` - Check connection status
-   - `send_keys` - Send keyboard input
-   - `send_mouse_move` - Move mouse cursor
-   - `send_mouse_click` - Click at coordinates
-   - `inspect_viewport` - Get visual description of current screen
-
-Example conversation:
-```
-You: "Use the connect_scenic tool to test connection to my Flamelex app"
-Claude: [Uses connect_scenic tool and shows connection status]
-
-You: "Send the text 'hello world' using send_keys"
-Claude: [Uses send_keys tool to type text into your app]
+```bash
+cd your_scenic_app
+iex -S mix
+# ScenicMCP TCP server listening on port 9999
 ```
 
-### MCP Tools
+### Tool Examples
 
-The server provides these MCP tools:
+**Connect to app:**
+```json
+{"action": "status"}
+```
 
-#### `connect_scenic`
-Test connection to the Scenic application.
-
-#### `get_scenic_status` 
-Check server status and available commands.
-
-#### `send_keys`
-Send keyboard input to the Scenic application.
-
-**Parameters:**
-- `text` (string): Text to type (each character sent as individual key press)
-- `key` (string): Special key name (enter, escape, tab, backspace, delete, up, down, left, right, home, end, page_up, page_down, f1-f12)
-- `modifiers` (array): Modifier keys (ctrl, shift, alt, cmd, meta)
-
-#### `send_mouse_move`
-Move mouse cursor to specific coordinates.
-
-**Parameters:**
-- `x` (number): X coordinate
-- `y` (number): Y coordinate
-
-#### `send_mouse_click`
-Click mouse at specific coordinates.
-
-**Parameters:**
-- `x` (number): X coordinate
-- `y` (number): Y coordinate
-- `button` (string): Mouse button (left, right, middle) - default: left
-
-#### `get_scenic_graph` (NEW in v0.2.0)
-Return the script table for a ViewPort, providing a visual description of the scene.
-
-#### `take_screenshot`
-Capture a screenshot of the current Scenic display.
-
-**Parameters:**
-- `filename` (string, optional): Custom filename for the screenshot
-- `format` (string, optional): Output format - "path" (default) or "base64"
-
-### Examples
-
-**Send text:**
+**Type text:**
 ```json
 {
   "action": "send_keys",
@@ -142,19 +170,19 @@ Capture a screenshot of the current Scenic display.
 }
 ```
 
-**Send special key:**
+**Press special key:**
 ```json
 {
-  "action": "send_keys", 
+  "action": "send_keys",
   "key": "enter"
 }
 ```
 
-**Send key with modifiers:**
+**Key with modifiers:**
 ```json
 {
   "action": "send_keys",
-  "key": "c",
+  "key": "s",
   "modifiers": ["ctrl"]
 }
 ```
@@ -168,7 +196,7 @@ Capture a screenshot of the current Scenic display.
 }
 ```
 
-**Click mouse:**
+**Click:**
 ```json
 {
   "action": "send_mouse_click",
@@ -178,96 +206,84 @@ Capture a screenshot of the current Scenic display.
 }
 ```
 
-**Get visual feedback:**
+**Inspect viewport:**
+```json
+{"action": "inspect_viewport"}
+```
+
+**Take screenshot:**
 ```json
 {
-  "action": "get_scenic_graph"
+  "action": "take_screenshot",
+  "filename": "app_screenshot.png",
+  "format": "path"
 }
 ```
 
 ## Architecture
 
 ```
-MCP Client (Claude Desktop)
-    ↓
-TypeScript MCP Server (scenic_mcp)
+Claude Desktop / Claude Code / AI agent using MCP
+    ↓ (stdio)
+TypeScript MCP Server (running locally)
     ↓ (TCP port 9999)
-Elixir GenServer Bridge (ScenicMcp.Server)
-    ↓ (ScenicMcp.Probes)
-Scenic.Driver.send_input/2
-    ↓
-Scenic Driver Process (:scenic_driver)
-    ↓
+ScenicMcp.Server (GenServer)
+    ↓ (function calls)
+ScenicMcp.Tools
+    ↓ (Scenic.Driver.send_input/2)
+Scenic Driver Process
+    ↓ (send input to the *driver* not the viewport)
 Your Scenic Application
 ```
 
-### Key Components
-
-- **ScenicMcp.Server**: TCP server that receives commands from the TypeScript bridge
-- **ScenicMcp.Probes**: Direct interface to Scenic internals, sends input via `Scenic.Driver.send_input/2`
-- **Process Names**: Uses `:main_viewport` and `:scenic_driver` registered process names
+Note that in Scenic, the Drivers are responsible for some things e.g. detecting which Scenic component got clicked on if they're rendered on top of eachother, so we need to send our injected input to the *Driver* and NOT the ViewPort
 
 ## Development
 
-**Start the Elixir server:**
+**Build TypeScript:**
 ```bash
-cd your_scenic_app
-mix run --no-halt
+npm run build       # One-time build
+npm run dev         # Watch mode
 ```
 
-**Test the MCP server:**
+**Bundle for distribution:**
 ```bash
-cd scenic_mcp
-node src/index.ts
+npm run bundle      # Copies dist/* to priv/mcp_server/
 ```
 
-## Testing
-
-This project includes comprehensive testing to ensure reliability and guide improvements.
-
-### Test Suites
-
-1. **Elixir Unit Tests** - Core server functionality
-   ```bash
-   mix test
-   mix test --cover  # With coverage reporting
-   ```
-
-2. **TypeScript Tests** - MCP integration testing
-   ```bash
-   npm test
-   npm run test:coverage  # With coverage
-   npm run test:watch     # Watch mode
-   ```
-
-3. **LLM Tool Testing** - Validates tool descriptions and usability
-   ```bash
-   npm run test:llm-tools
-   ```
-
-### Testing Innovation: LLM-Driven Tool Enhancement
-
-One of the unique aspects of this project is how we use LLM testing to improve the tool descriptions:
-
-1. **Tool Usage Analysis**: We run scenarios through LLMs to see which tools they discover and use
-2. **Description Enhancement**: Based on usage patterns, we automatically enhance tool descriptions
-3. **Real-World Validation**: The enhanced descriptions are tested against real development scenarios
-
-This approach has led to significant improvements in tool discoverability and correct usage by AI assistants.
-
-### Running All Tests
+**Test Elixir server:**
 ```bash
-npm run test:all  # Runs both Elixir and TypeScript tests
+mix test
 ```
 
-For detailed testing documentation, see [TESTING.md](TESTING.md).
+## Project Structure
 
-## Requirements
+```
+scenic_mcp/
+├── lib/
+│   ├── scenic_mcp.ex              # Module documentation
+│   └── scenic_mcp/
+│       ├── application.ex         # Supervisor setup
+│       ├── server.ex              # TCP server (115 lines)
+│       └── tools.ex               # Tool handlers (338 lines)
+├── src/
+│   ├── index.ts                   # MCP server setup (79 lines)
+│   ├── connection.ts              # TCP/process management (310 lines)
+│   └── tools.ts                   # Tool definitions/handlers (827 lines)
+├── test/
+│   └── scenic_mcp/
+│       └── server_test.exs        # TCP server tests
+└── dist/                          # Compiled TypeScript
+```
 
-- Elixir/OTP 24+
-- Node.js 18+
-- Scenic 0.11+
+## How It Works
+
+1. **TypeScript MCP Server** (src/index.ts) handles MCP protocol via stdio
+2. **TCP Bridge** (src/connection.ts) connects to Elixir server
+3. **Elixir GenServer** (lib/scenic_mcp/server.ex) receives JSON commands
+4. **Tool Handlers** (lib/scenic_mcp/tools.ex) interact with Scenic viewport/driver
+5. **Driver** sends input events to your Scenic app
 
 ## License
 
-MIT License
+MIT
