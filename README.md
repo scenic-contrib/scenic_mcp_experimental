@@ -7,7 +7,6 @@ A Model Context Protocol (MCP) server that enables AI assistants to interact wit
 - **Keyboard Input**: Send text and special keys with modifier support
 - **Mouse Control**: Move cursor and click at specific coordinates
 - **Visual Feedback**: Inspect viewport structure and capture screenshots
-- **Process Management**: Start, stop, and monitor Scenic applications
 - **MCP Integration**: Works with any MCP-compatible client (Claude Desktop, Claude Code, etc.)
 
 ## Available Tools
@@ -26,10 +25,6 @@ A Model Context Protocol (MCP) server that enables AI assistants to interact wit
 7. **`inspect_viewport`** - Get text description of viewport structure
 8. **`take_screenshot`** - Capture PNG screenshot (path or base64)
 
-### Process Management
-9. **`start_app`** - Launch Scenic app from directory path
-10. **`stop_app`** - Stop managed app process
-
 ## Installation
 
 ### 1. Add to your Scenic app's mix.exs
@@ -46,10 +41,19 @@ end
 
 **CRITICAL**: scenic_mcp requires named viewport and driver processes.
 
-Update your `scenic_config()` function:
+In your supervision tree, where you're starting the top Scenic process, you pass in the viewport options. This needs to be updated:
 
 ```elixir
-def scenic_config() do
+children = [
+  ...other processes here,
+  {Scenic, [scenic_viewport_config()]}
+]
+```
+
+where `scenic_viewport_config` is simply a function returning the opts list:
+
+```elixir
+def scenic_viewport_config() do
   [
     name: :main_viewport,  # Required!
     size: {800, 600},
@@ -65,6 +69,8 @@ def scenic_config() do
   ]
 end
 ```
+
+Note that `name` here defines the atom which will become the registered process name for the ViewPort process. We need to know this in order to find the pid of this process in order to interact with the ViewPort, and our solution was to look for this specific name `main_viewport` so you need to set this in your config as above for ScenicMCP to work.
 
 ### 3. Install TypeScript dependencies
 
@@ -133,7 +139,6 @@ Tidewave provides runtime introspection for Elixir/Phoenix apps (logs, SQL queri
 ```
 
 **Important:**
-- Tidewave requires `"type": "http"` for Phoenix apps (NOT "sse")
 - The Tidewave server runs on the same port as your Phoenix app (default 4000)
 - Restart Claude Code after configuration changes
 - See [Tidewave docs](https://hexdocs.pm/tidewave/mcp.html) for more info
@@ -218,18 +223,20 @@ iex -S mix
 ## Architecture
 
 ```
-Claude Desktop / Claude Code
+Claude Desktop / Claude Code / AI agent using MCP
     ↓ (stdio)
-TypeScript MCP Server
+TypeScript MCP Server (running locally)
     ↓ (TCP port 9999)
 ScenicMcp.Server (GenServer)
     ↓ (function calls)
 ScenicMcp.Tools
     ↓ (Scenic.Driver.send_input/2)
 Scenic Driver Process
-    ↓
+    ↓ (send input to the *driver* not the viewport)
 Your Scenic Application
 ```
+
+Note that in Scenic, the Drivers are responsible for some things e.g. detecting which Scenic component got clicked on if they're rendered on top of eachother, so we need to send our injected input to the *Driver* and NOT the ViewPort
 
 ## Development
 

@@ -137,20 +137,6 @@ export function getToolDefinitions() {
         },
       },
     },
-    {
-      name: 'get_app_logs',
-      description: 'DEBUGGING: Retrieve recent log output from the Scenic application. Essential for debugging crashes, errors, and understanding app behavior. Use when someone reports "the app crashed" or "something\'s wrong".',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          lines: {
-            type: 'number',
-            description: 'Number of log lines to retrieve (default: 100)',
-            default: 100,
-          },
-        },
-      },
-    },
   ];
 }
 
