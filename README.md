@@ -1,15 +1,24 @@
 # Scenic MCP - Input Control for Scenic Applications
 
-A Model Context Protocol (MCP) server that enables external keyboard and mouse input injection into Scenic GUI applications.
+A Model Context Protocol (MCP) server that enables LLMs to interact with Scenic GUI applications.
 
 ## Features
 
-- **Keyboard Input**: Send text and special keys to Scenic applications
+- **Keyboard Input**: Proper ViewPort input routing via `Scenic.ViewPort.Input.send/2`
 - **Mouse Control**: Move cursor and click at specific coordinates
-- **Visual Feedback**: Get descriptions of what's displayed on screen (v0.2.0)
+- **Visual Feedback**: Get descriptions of what's displayed on screen, let the LLM "see" the Scenic app
 - **MCP Integration**: Works with any MCP-compatible client (Claude Desktop, etc.)
-- **Real-time Communication**: TCP-based connection for low-latency input
-- **Scenic Compatible**: Uses proper Scenic ViewPort input routing
+
+Although the MCP server was clearly written to give Scenic tools to LLMs, it does provide an API that mimics user interactions,
+this can be very useful for scripting user input and writing tests for actual user input scenarios.
+
+### 🛠️ Available Tools
+1. `connect_scenic` - Test connection to Scenic application
+2. `get_scenic_status` - Check server status and connection
+3. `send_keys` - Send keyboard input (text, special keys, modifiers)
+4. `send_mouse_move` - Move mouse cursor to coordinates
+5. `send_mouse_click` - Click mouse at coordinates with button selection
+6. `get_scenic_graph` - Get visual description of what's on screen
 
 ## Installation
 
@@ -52,6 +61,18 @@ end
 cd scenic_mcp
 npm install
 ```
+
+4. **Configure for Claude Code (optional):**
+
+```
+# Add the MCP server to Claude Code
+claude mcp add scenic-mcp /path/to/scenic_mcp/dist/index.js
+
+# Verify it was added
+claude mcp list
+```
+
+Note: Replace /path/to/scenic_mcp with the actual path to your scenic_mcp directory (wherever you cloned this repo).
 
 ## Usage
 
@@ -167,12 +188,6 @@ Scenic Driver Process (:scenic_driver)
 Your Scenic Application
 ```
 
-### Key Components
-
-- **ScenicMcp.Server**: TCP server that receives commands from the TypeScript bridge
-- **ScenicMcp.Probes**: Direct interface to Scenic internals, sends input via `Scenic.Driver.send_input/2`
-- **Process Names**: Uses `:main_viewport` and `:scenic_driver` registered process names
-
 ## Development
 
 **Start the Elixir server:**
@@ -225,14 +240,6 @@ This approach has led to significant improvements in tool discoverability and co
 ```bash
 npm run test:all  # Runs both Elixir and TypeScript tests
 ```
-
-For detailed testing documentation, see [TESTING.md](TESTING.md).
-
-## Requirements
-
-- Elixir/OTP 24+
-- Node.js 18+
-- Scenic 0.11+
 
 ## License
 

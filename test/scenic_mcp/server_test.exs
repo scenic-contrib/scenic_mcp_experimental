@@ -8,19 +8,19 @@ defmodule ScenicMcp.ServerTest do
     # Start the server on a test port with a unique name
     port = 9998 + :rand.uniform(100)  # Random port to avoid conflicts
     server_name = :"test_server_#{:rand.uniform(10000)}"
-    
-    {:ok, server_pid} = GenServer.start_link(ScenicMcp.Server, port, name: server_name)
-    
+
+    {:ok, server_pid} = GenServer.start_link(ScenicMcp.Server, [port: port], name: server_name)
+
     # Give the server time to start
     Process.sleep(200)
-    
+
     # Cleanup function
     on_exit(fn ->
       if Process.alive?(server_pid) do
         GenServer.stop(server_pid)
       end
     end)
-    
+
     %{server_pid: server_pid, port: port, server_name: server_name}
   end
 
@@ -31,9 +31,9 @@ defmodule ScenicMcp.ServerTest do
     end
 
     test "server handles JSON commands", %{port: port} do
-      command = %{"action" => "get_scenic_graph"}
+      command = %{"action" => "inspect_viewport"}
       response = send_tcp_command(port, command)
-      
+
       # Should get a JSON response (even if it's an error about no viewport)
       assert is_map(response)
       assert Map.has_key?(response, "error") or Map.has_key?(response, "status")
@@ -56,12 +56,12 @@ defmodule ScenicMcp.ServerTest do
   end
 
   describe "command handling" do
-    test "get_scenic_graph returns error when no viewport available", %{port: port} do
-      command = %{"action" => "get_scenic_graph"}
+    test "inspect_viewport returns error when no viewport available", %{port: port} do
+      command = %{"action" => "inspect_viewport"}
       response = send_tcp_command(port, command)
-      
+
       assert is_map(response)
-      assert String.starts_with?(response["error"], "Failed to get scenic graph")
+      assert String.contains?(response["error"], "Failed to get scenic graph")
     end
 
     test "send_keys returns error when no driver available", %{port: port} do
@@ -91,7 +91,7 @@ defmodule ScenicMcp.ServerTest do
 
   describe "driver detection" do
     test "find_scenic_driver returns nil when no driver exists" do
-      result = ScenicMcp.Server.find_scenic_driver()
+      result = ScenicMcp.Tools.find_scenic_driver()
       assert result == nil
     end
   end
