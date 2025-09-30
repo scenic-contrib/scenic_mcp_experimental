@@ -27,4 +27,4 @@ jobs:
     - name: Compile project
       run: mix compile --warnings-as-errors
     - name: Run tests
-      run: mix test --cover
+      run: mix test
