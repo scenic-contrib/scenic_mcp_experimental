@@ -14,9 +14,13 @@ defmodule ScenicMcp.Application do
     app_name = Application.get_env(:scenic_mcp, :app_name, "Unknown")
     children = [{ScenicMcp.Server, port: port, app_name: app_name}]
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: ScenicMcp.Supervisor)
-    |> case do
-      {:ok, pid} ->
+    boot_result = Supervisor.start_link(children,
+      name: ScenicMcp.Supervisor,
+      strategy: :one_for_one
+    )
+
+    case boot_result do
+      {:ok, pid} when is_pid(pid) ->
         Logger.info("✅ ScenicMCP successfully started on port #{port}")
         {:ok, pid}
 

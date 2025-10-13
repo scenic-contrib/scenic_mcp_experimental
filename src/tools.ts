@@ -137,6 +137,47 @@ export function getToolDefinitions() {
         },
       },
     },
+    {
+      name: 'find_clickable_elements',
+      description: 'SEMANTIC DISCOVERY: Find all clickable elements in the viewport with their semantic IDs, types, bounds, and center coordinates. Use this to discover what elements are available for interaction before clicking. Similar to Playwright\'s element queries.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          filter: {
+            type: 'string',
+            description: 'Optional filter by element ID (e.g., "load_component_button" or ":load_component_button")',
+          },
+        },
+      },
+    },
+    {
+      name: 'click_element',
+      description: 'SEMANTIC CLICK: Click an element by its semantic ID. This is the high-level equivalent of Playwright\'s page.click(selector). Automatically finds the element, calculates its center, and clicks it. Use this for deterministic, reliable clicking in tests and automation.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          element_id: {
+            type: 'string',
+            description: 'The semantic ID of the element to click (e.g., "load_component_button" or ":load_component_button")',
+          },
+        },
+        required: ['element_id'],
+      },
+    },
+    {
+      name: 'hover_element',
+      description: 'SEMANTIC HOVER: Move the mouse to hover over an element by its semantic ID. Finds the element and moves the cursor to its center without clicking. Useful for testing hover effects and tooltips.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          element_id: {
+            type: 'string',
+            description: 'The semantic ID of the element to hover over (e.g., "load_component_button")',
+          },
+        },
+        required: ['element_id'],
+      },
+    },
   ];
 }
 
@@ -160,6 +201,12 @@ export async function handleToolCall(name: string, args: any) {
       return await handleInspectViewport(args);
     case 'take_screenshot':
       return await handleTakeScreenshot(args);
+    case 'find_clickable_elements':
+      return await handleFindClickableElements(args);
+    case 'click_element':
+      return await handleClickElement(args);
+    case 'hover_element':
+      return await handleHoverElement(args);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -603,6 +650,232 @@ async function handleTakeScreenshot(args: any) {
         {
           type: 'text',
           text: `Error taking screenshot: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
+async function handleFindClickableElements(args: any) {
+  try {
+    const isRunning = await conn.checkTCPServer();
+    if (!isRunning) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Cannot find clickable elements: No Scenic application connected.\n\nStart your Scenic application first.',
+          },
+        ],
+        isError: false,
+      };
+    }
+
+    const { filter } = args;
+
+    const command = {
+      action: 'find_clickable',
+      filter,
+    };
+
+    const response = await conn.sendToElixir(command);
+    const data = JSON.parse(response);
+
+    if (data.error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error finding clickable elements: ${data.error}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    let resultText = `Found ${data.count} clickable element(s)\n${'='.repeat(50)}\n\n`;
+
+    if (data.elements && data.elements.length > 0) {
+      data.elements.forEach((elem: any, index: number) => {
+        resultText += `${index + 1}. Element ID: ${elem.id}\n`;
+        resultText += `   Type: ${elem.type}\n`;
+        if (elem.center) {
+          resultText += `   Center: (${elem.center.x}, ${elem.center.y})\n`;
+        }
+        if (elem.bounds) {
+          resultText += `   Bounds: left=${elem.bounds.left}, top=${elem.bounds.top}, width=${elem.bounds.width}, height=${elem.bounds.height}\n`;
+        }
+        resultText += '\n';
+      });
+    } else {
+      resultText += 'No clickable elements found.\n';
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: resultText,
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error finding clickable elements: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
+async function handleClickElement(args: any) {
+  try {
+    const isRunning = await conn.checkTCPServer();
+    if (!isRunning) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Cannot click element: No Scenic application connected.\n\nStart your Scenic application first.',
+          },
+        ],
+        isError: false,
+      };
+    }
+
+    const { element_id } = args;
+
+    if (!element_id) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Error: Must provide "element_id" parameter',
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const command = {
+      action: 'click_element',
+      element_id,
+    };
+
+    const response = await conn.sendToElixir(command);
+    const data = JSON.parse(response);
+
+    if (data.error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error clicking element: ${data.error}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    let resultText = `Successfully clicked element: ${element_id}\n`;
+    if (data.clicked_at) {
+      resultText += `Clicked at coordinates: (${data.clicked_at.x}, ${data.clicked_at.y})\n`;
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: resultText,
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error clicking element: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
+async function handleHoverElement(args: any) {
+  try {
+    const isRunning = await conn.checkTCPServer();
+    if (!isRunning) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Cannot hover over element: No Scenic application connected.\n\nStart your Scenic application first.',
+          },
+        ],
+        isError: false,
+      };
+    }
+
+    const { element_id } = args;
+
+    if (!element_id) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Error: Must provide "element_id" parameter',
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const command = {
+      action: 'hover_element',
+      element_id,
+    };
+
+    const response = await conn.sendToElixir(command);
+    const data = JSON.parse(response);
+
+    if (data.error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error hovering over element: ${data.error}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    let resultText = `Hovering over element: ${element_id}\n`;
+    if (data.position) {
+      resultText += `Cursor at coordinates: (${data.position.x}, ${data.position.y})\n`;
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: resultText,
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error hovering over element: ${error instanceof Error ? error.message : 'Unknown error'}`,
         },
       ],
       isError: true,

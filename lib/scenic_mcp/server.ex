@@ -19,20 +19,18 @@ defmodule ScenicMcp.Server do
 
     case :gen_tcp.listen(port, [:binary, packet: :line, active: false, reuseaddr: true]) do
       {:ok, listen_socket} ->
-        Logger.info("ScenicMCP TCP server listening on port #{port} for #{app_name}")
+        Logger.info("ScenicMCP TCP server listening for #{app_name} on port #{port}")
         {:ok, %{listen_socket: listen_socket, port: port, app_name: app_name}, {:continue, :accept}}
 
       {:error, :eaddrinuse} ->
-        app_name = Application.get_env(:scenic_mcp, :app_name, "Unknown")
         Logger.error("❌ Port #{port} is already in use for #{app_name}!")
         Logger.error("💡 Configure a unique port in config.exs: config :scenic_mcp, port: UNIQUE_PORT")
         Logger.error("📋 Suggested ports: Flamelex=9999, Quillex=9997, Tests=9996/9998")
         {:stop, :eaddrinuse}
 
       {:error, reason} ->
-        app_name = Application.get_env(:scenic_mcp, :app_name, "Unknown")
         Logger.error("Failed to start TCP server on port #{port} for #{app_name}: #{inspect(reason)}")
-        {:stop, reason}
+        {:stop, "Failed to start TCP server"}
     end
   end
 
@@ -81,24 +79,15 @@ defmodule ScenicMcp.Server do
 
   def parse_message(json_string) do
     case Jason.decode(json_string) do
+
       {:ok, %{"action" => "status"}} ->
         # Handle status command
         %{status: "ok", message: "Scenic MCP Server is running"}
 
-      {:ok, %{"action" => "inspect_viewport"} = _command} ->
-        handle_tool_result(ScenicMcp.Tools.handle_get_scenic_graph())
-
-      {:ok, %{"action" => "send_keys"} = command} ->
-        handle_tool_result(ScenicMcp.Tools.handle_send_keys(command))
-
-      {:ok, %{"action" => "send_mouse_move"} = command} ->
-        handle_tool_result(ScenicMcp.Tools.handle_mouse_move(command))
-
-      {:ok, %{"action" => "send_mouse_click"} = command} ->
-        handle_tool_result(ScenicMcp.Tools.handle_mouse_click(command))
-
-      {:ok, %{"action" => "take_screenshot"} = command} ->
-        handle_tool_result(ScenicMcp.Tools.take_screenshot(command))
+      {:ok, %{"action" => all_other_actions} = actn} when is_binary(all_other_actions) ->
+        # Handle tool calls
+        ScenicMcp.Tools.handle_action(actn)
+        |> handle_tool_result()
 
       {:ok, command} ->
         Logger.error("#{__MODULE__} received unknown command: #{inspect(command)}")
