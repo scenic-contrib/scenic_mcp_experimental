@@ -10,6 +10,7 @@ Enable AI assistants to interact with [Scenic](https://github.com/ScenicFramewor
 
 - 🎹 **Keyboard Input** - Send text and special keys with modifier support (Ctrl, Shift, Alt, Cmd)
 - 🖱️ **Mouse Control** - Move cursor and click at specific coordinates
+- 🎯 **Semantic Interaction** - Click specific components using semantic markup, not just raw coordinates
 - 📸 **Visual Feedback** - Inspect viewport structure and capture screenshots
 - 🤖 **MCP Integration** - Works with Claude Desktop, Claude Code, and other MCP clients
 
