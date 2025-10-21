@@ -8,9 +8,9 @@
     "scenic-mcp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/index.js",
     "dev": "tsc --watch",
-    "bundle": "tsc && mkdir -p priv/mcp_server && cp dist/* priv/mcp_server/",
+    "bundle": "tsc && chmod +x dist/index.js && mkdir -p priv/mcp_server && cp dist/* priv/mcp_server/",
     "prepublishOnly": "npm run build"
   },
   "keywords": ["mcp", "scenic", "elixir", "automation"],

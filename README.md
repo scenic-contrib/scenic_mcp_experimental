@@ -316,6 +316,23 @@ scenic_mcp/
 
 ## Troubleshooting
 
+### MCP Server Not Connecting
+
+**Error:** MCP server fails to connect or tools are not available in Claude Code/Desktop
+
+**Solution:** The compiled `dist/index.js` file must be executable. TypeScript compilation doesn't preserve executable permissions, even if the source file has them.
+
+**Fix:**
+```bash
+chmod +x /path/to/scenic_mcp/dist/index.js
+```
+
+**Automatic fix:** The build script now automatically makes the file executable. If you built before this fix was added, either:
+1. Run `npm run build` again (recommended)
+2. Manually run `chmod +x dist/index.js`
+
+After fixing, restart Claude Code or start a new conversation for the change to take effect.
+
 ### Port Already in Use
 
 **Error:** `Port 9999 is already in use!`
