@@ -116,7 +116,18 @@ Edit `~/.claude.json`:
 
 **Optional: Tidewave MCP Configuration**
 
-Tidewave provides runtime introspection for Elixir/Phoenix apps (logs, SQL queries, code evaluation, docs). If your project includes Tidewave (Flamelex/Quillex do), add this to the same project config:
+Tidewave provides runtime introspection for Elixir/Phoenix apps (logs, SQL queries, code evaluation, docs). If your project includes Tidewave (Flamelex/Quillex do), you can add it alongside Scenic MCP.
+
+**Using Claude Code CLI:**
+
+```bash
+TIDEWAVE_PORT=4000  # Change to your app's port
+claude mcp add --transport http tidewave http://localhost:$TIDEWAVE_PORT/tidewave/mcp
+```
+
+**Manual Configuration:**
+
+Add this to the same project config in `~/.claude.json`:
 
 ```json
 {
@@ -131,13 +142,15 @@ Tidewave provides runtime introspection for Elixir/Phoenix apps (logs, SQL queri
         },
         "tidewave": {
           "type": "http",
-          "url": "http://localhost:4000/tidewave/mcp"
+          "url": "http://localhost:$TIDEWAVE_PORT/tidewave/mcp"
         }
       }
     }
   }
 }
 ```
+
+Replace `$TIDEWAVE_PORT` with your application's HTTP port (e.g., `4000` for Phoenix defaults).
 
 ### 5. Start your Scenic app
 
