@@ -134,8 +134,15 @@ defmodule ScenicMcp.Tools do
       text
       |> String.graphemes()
       |> Enum.each(fn char ->
+        # Convert character to key atom and determine if shift is needed
+        # Scenic uses :key tuples, not :codepoint
         codepoint = char |> String.to_charlist() |> List.first()
-        Scenic.Driver.send_input(driver_struct, {:codepoint, {codepoint, []}})
+        {key_atom, modifiers} = codepoint_to_key_with_mods(codepoint)
+
+        # Send key press and release
+        Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 1, modifiers}})
+        Process.sleep(5)
+        Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 0, modifiers}})
       end)
 
       {:ok, %{status: "ok", message: "Text sent: #{text}"}}
@@ -261,65 +268,75 @@ defmodule ScenicMcp.Tools do
           {:error, "No semantic table found - the viewport may not have semantic DOM enabled"}
 
         semantic_table ->
-          # Flatten nested elements structure and keep best version (prefer :_root_)
-          flat_elements = :ets.tab2list(semantic_table)
-            |> Enum.flat_map(fn {graph_key, data} ->
-              timestamp = Map.get(data, :timestamp, 0)
-              case Map.get(data, :elements) do
-                elements when is_map(elements) ->
-                  Enum.map(elements, fn {id, element_info} ->
-                    {id, element_info, timestamp, graph_key}
-                  end)
-                _ -> []
-              end
-            end)
-            # Keep the best version of each ID (prefer :_root_, otherwise latest timestamp)
-            |> Enum.group_by(fn {id, _element_info, _timestamp, _graph_key} -> id end)
-            |> Enum.map(fn {_id, versions} ->
-              # Write debug to file
-              debug_data = versions |> Enum.map(fn {id, info, ts, gk} ->
-                bounds = Map.get(info, :bounds) || Map.get(Map.get(info, :semantic, %{}), :bounds)
-                "  {#{inspect(id)}, #{inspect(gk)}, ts: #{ts}, bounds: #{inspect(bounds)}}\n"
-              end) |> Enum.join("")
-              File.write!("/tmp/scenic_mcp_debug.txt", "Versions:\n#{debug_data}", [:append])
+          # Phase 1 Semantic Registration Format
+          # ETS stores: {{scene_name, entry_id}, %Entry{}}
+          # where Entry has: id, type, clickable, screen_bounds, local_bounds, etc.
 
-              best_version = Enum.max_by(versions, fn {_id, _info, ts, graph_key} ->
-                root_priority = if graph_key in [:_root_, "_root_"], do: 1_000_000_000_000, else: 0
-                root_priority + ts
+          all_entries = :ets.tab2list(semantic_table)
+            |> Enum.map(fn {{scene_name, _entry_id}, entry} ->
+              # entry is a %Scenic.Semantic.Compiler.Entry{} struct
+              {entry.id, entry, scene_name}
+            end)
+
+          # Group by ID (in case multiple scenes have same ID)
+          # Prefer :_root_ scene, otherwise use first one found
+          flat_elements = all_entries
+            |> Enum.group_by(fn {id, _entry, _scene_name} -> id end)
+            |> Enum.map(fn {_id, versions} ->
+              # Prefer entries from :_root_ scene
+              best_version = Enum.max_by(versions, fn {_id, _entry, scene_name} ->
+                if scene_name in [:_root_, "_root_"], do: 1_000_000, else: 0
               end)
-              {id, element_info, _timestamp, graph_key} = best_version
-              File.write!("/tmp/scenic_mcp_debug.txt", "Selected: #{inspect(id)} from #{inspect(graph_key)}, bounds: #{inspect(Map.get(element_info, :bounds))}\n\n", [:append])
-              {id, element_info}
+              {id, entry, _scene_name} = best_version
+              {id, entry}
             end)
 
           filter = Map.get(params, "filter")
 
           clickable_elements =
             flat_elements
-            |> Enum.filter(fn {_id, element_info} ->
-              # Check for clickable in semantic (component registration) or top-level (manual registration)
-              Map.get(element_info, :clickable, false) ||
-                (element_info
-                 |> Map.get(:semantic, %{})
-                 |> Map.get(:clickable, false))
+            |> Enum.filter(fn {_id, entry} ->
+              # Phase 1: clickable flag is directly on the Entry struct
+              Map.get(entry, :clickable, false)
             end)
             |> maybe_filter_by_id(filter)
-            |> Enum.map(fn {id, element_info} ->
-              # Calculate center coordinates from bounds and transforms
-              semantic = Map.get(element_info, :semantic, %{})
-              # Check for bounds at top level first (manual registration), then in semantic (component)
-              bounds = Map.get(element_info, :bounds) || Map.get(semantic, :bounds)
-              transforms = Map.get(element_info, :transforms, %{})
-              center = calculate_center_with_transforms(bounds, transforms)
+            |> Enum.map(fn {id, entry} ->
+              # Phase 1: Use screen_bounds (will fall back to local_bounds in Phase 1)
+              # Bounds format: %{left: x, top: y, width: w, height: h}
+              bounds = entry.screen_bounds
+
+              # Calculate center from bounds
+              center = if bounds do
+                %{
+                  "x" => bounds.left + bounds.width / 2,
+                  "y" => bounds.top + bounds.height / 2
+                }
+              else
+                nil
+              end
+
+              # Convert bounds to old format for compatibility
+              bounds_map = if bounds do
+                %{
+                  "left" => bounds.left,
+                  "top" => bounds.top,
+                  "width" => bounds.width,
+                  "height" => bounds.height
+                }
+              else
+                nil
+              end
 
               %{
                 id: inspect(id),
                 raw_id: id,
-                type: Map.get(element_info, :type) || Map.get(semantic, :type, :unknown),
-                bounds: bounds,
+                type: entry.type,
+                bounds: bounds_map,
                 center: center,
-                transforms: transforms,
-                data: semantic
+                clickable: entry.clickable,
+                label: entry.label,
+                role: entry.role,
+                z_index: entry.z_index
               }
               |> sanitize_for_json()
             end)
@@ -648,6 +665,7 @@ defmodule ScenicMcp.Tools do
   defp parse_modifiers(modifiers) when is_list(modifiers) do
     modifiers
     |> Enum.filter(&(&1 in ["shift", "ctrl", "alt", "cmd", "meta"]))
+    |> Enum.map(&String.to_atom/1)  # Convert to atoms for Scenic
   end
 
   defp parse_modifiers(_), do: []
@@ -662,6 +680,59 @@ defmodule ScenicMcp.Tools do
   end
 
   defp parse_button(_), do: :btn_left
+
+  # Convert Unicode codepoint to Scenic key atom with modifiers
+  # Returns {key_atom, modifiers} tuple
+  # Letters and numbers get :key_<char> format (e.g., :key_a, :key_1)
+  # Special characters get their own key atoms, uppercase/symbols include shift
+  defp codepoint_to_key_with_mods(codepoint) when is_integer(codepoint) do
+    case codepoint do
+      # Lowercase letters a-z (no shift)
+      c when c >= ?a and c <= ?z -> {String.to_atom("key_#{<<c>>}"), []}
+      # Uppercase letters A-Z (need shift)
+      c when c >= ?A and c <= ?Z -> {String.to_atom("key_#{<<c + 32>>}"), [:shift]}
+      # Numbers 0-9 (no shift)
+      c when c >= ?0 and c <= ?9 -> {String.to_atom("key_#{<<c>>}"), []}
+      # Space
+      32 -> {:key_space, []}
+      # Common punctuation requiring shift
+      ?! -> {:key_1, [:shift]}
+      ?@ -> {:key_2, [:shift]}
+      ?# -> {:key_3, [:shift]}
+      ?$ -> {:key_4, [:shift]}
+      ?% -> {:key_5, [:shift]}
+      ?^ -> {:key_6, [:shift]}
+      ?& -> {:key_7, [:shift]}
+      ?* -> {:key_8, [:shift]}
+      ?( -> {:key_9, [:shift]}
+      ?) -> {:key_0, [:shift]}
+      ?_ -> {:key_minus, [:shift]}
+      ?+ -> {:key_equal, [:shift]}
+      ?{ -> {:key_open_bracket, [:shift]}
+      ?} -> {:key_close_bracket, [:shift]}
+      ?| -> {:key_backslash, [:shift]}
+      ?: -> {:key_semicolon, [:shift]}
+      ?" -> {:key_apostrophe, [:shift]}
+      ?< -> {:key_comma, [:shift]}
+      ?> -> {:key_period, [:shift]}
+      ?? -> {:key_slash, [:shift]}
+      ?~ -> {:key_grave, [:shift]}
+      # Common punctuation without shift
+      ?- -> {:key_minus, []}
+      ?= -> {:key_equal, []}
+      ?[ -> {:key_open_bracket, []}
+      ?] -> {:key_close_bracket, []}
+      ?\\ -> {:key_backslash, []}
+      ?\; -> {:key_semicolon, []}
+      ?' -> {:key_apostrophe, []}
+      ?, -> {:key_comma, []}
+      ?. -> {:key_period, []}
+      ?/ -> {:key_slash, []}
+      ?` -> {:key_grave, []}
+      # Fallback for unknown characters - use generic key name
+      _ -> {:key_unknown, []}
+    end
+  end
 
   defp calculate_center(bounds) when is_map(bounds) do
     # Bounds format: %{left: x, top: y, width: w, height: h}
