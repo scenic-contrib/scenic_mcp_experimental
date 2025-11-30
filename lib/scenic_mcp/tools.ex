@@ -134,15 +134,13 @@ defmodule ScenicMcp.Tools do
       text
       |> String.graphemes()
       |> Enum.each(fn char ->
-        # Convert character to key atom and determine if shift is needed
-        # Scenic uses :key tuples, not :codepoint
-        codepoint = char |> String.to_charlist() |> List.first()
-        {key_atom, modifiers} = codepoint_to_key_with_mods(codepoint)
+        # Scenic components expect :codepoint events for character input
+        # The format is {:codepoint, {char_string, modifiers}}
+        # where char_string is a single UTF-8 character and modifiers is a list
 
-        # Send key press and release
-        Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 1, modifiers}})
-        Process.sleep(5)
-        Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 0, modifiers}})
+        # Send the codepoint event (this is what TextField listens for)
+        Scenic.Driver.send_input(driver_struct, {:codepoint, {char, []}})
+        Process.sleep(10)
       end)
 
       {:ok, %{status: "ok", message: "Text sent: #{text}"}}
