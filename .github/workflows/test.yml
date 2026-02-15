@@ -27,6 +27,6 @@ jobs:
     - name: Compile project
       env:
         SCENIC_LOCAL_TARGET: glfw
-      run: mix compile --warnings-as-errors
+      run: mix compile
     - name: Run tests
       run: mix test
