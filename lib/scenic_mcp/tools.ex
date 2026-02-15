@@ -134,15 +134,13 @@ defmodule ScenicMcp.Tools do
       text
       |> String.graphemes()
       |> Enum.each(fn char ->
-        # Convert character to key atom and determine if shift is needed
-        # Scenic uses :key tuples, not :codepoint
-        codepoint = char |> String.to_charlist() |> List.first()
-        {key_atom, modifiers} = codepoint_to_key_with_mods(codepoint)
+        # Scenic components expect :codepoint events for character input
+        # The format is {:codepoint, {char_string, modifiers}}
+        # where char_string is a single UTF-8 character and modifiers is a list
 
-        # Send key press and release
-        Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 1, modifiers}})
-        Process.sleep(5)
-        Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 0, modifiers}})
+        # Send the codepoint event (this is what TextField listens for)
+        Scenic.Driver.send_input(driver_struct, {:codepoint, {char, []}})
+        Process.sleep(10)
       end)
 
       {:ok, %{status: "ok", message: "Text sent: #{text}"}}
@@ -215,6 +213,74 @@ defmodule ScenicMcp.Tools do
     {:error, "Invalid parameters: must provide 'x' and 'y' coordinates"}
   end
 
+  @doc """
+  Send mouse button down (press without release).
+  Useful for drag operations.
+
+  Params: `%{"x" => number, "y" => number, "button" => string}`
+  """
+  @spec handle_mouse_down(map()) :: {:ok, map()} | {:error, String.t()}
+  def handle_mouse_down(%{"x" => x, "y" => y} = params) do
+    with {:ok, driver_struct} <- driver_state() do
+      button = parse_button(Map.get(params, "button", "left"))
+      Scenic.Driver.send_input(driver_struct, {:cursor_pos, {x, y}})
+      Scenic.Driver.send_input(driver_struct, {:cursor_button, {button, 1, [], {x, y}}})
+      {:ok, %{status: "ok", message: "Mouse down at (#{x}, #{y})"}}
+    end
+  end
+
+  def handle_mouse_down(_params) do
+    {:error, "Invalid parameters: must provide 'x' and 'y' coordinates"}
+  end
+
+  @doc """
+  Send mouse button up (release).
+  Useful for ending drag operations.
+
+  Params: `%{"x" => number, "y" => number, "button" => string}`
+  """
+  @spec handle_mouse_up(map()) :: {:ok, map()} | {:error, String.t()}
+  def handle_mouse_up(%{"x" => x, "y" => y} = params) do
+    with {:ok, driver_struct} <- driver_state() do
+      button = parse_button(Map.get(params, "button", "left"))
+      Scenic.Driver.send_input(driver_struct, {:cursor_pos, {x, y}})
+      Scenic.Driver.send_input(driver_struct, {:cursor_button, {button, 0, [], {x, y}}})
+      {:ok, %{status: "ok", message: "Mouse up at (#{x}, #{y})"}}
+    end
+  end
+
+  def handle_mouse_up(_params) do
+    {:error, "Invalid parameters: must provide 'x' and 'y' coordinates"}
+  end
+
+  @doc """
+  Send scroll wheel input.
+
+  Params:
+    - dx: horizontal scroll delta
+    - dy: vertical scroll delta
+    - x, y: cursor position (optional, defaults to center of viewport)
+
+  Example:
+    handle_scroll(%{"dx" => 0, "dy" => -1})  # Scroll down
+    handle_scroll(%{"dx" => 1, "dy" => 0})   # Scroll right
+  """
+  @spec handle_scroll(map()) :: {:ok, map()} | {:error, String.t()}
+  def handle_scroll(%{"dx" => dx, "dy" => dy} = params) do
+    x = Map.get(params, "x", 400)
+    y = Map.get(params, "y", 300)
+
+    with {:ok, driver_struct} <- driver_state() do
+      # Scenic cursor_scroll format: {:cursor_scroll, {{dx, dy}, {x, y}}}
+      Scenic.Driver.send_input(driver_struct, {:cursor_scroll, {{dx, dy}, {x, y}}})
+      {:ok, %{status: "ok", message: "Scroll sent: dx=#{dx}, dy=#{dy} at (#{x}, #{y})"}}
+    end
+  end
+
+  def handle_scroll(_params) do
+    {:error, "Invalid parameters: must provide 'dx' and 'dy' scroll deltas"}
+  end
+
   def inspect_viewport(args \\ nil) do
     handle_get_scenic_graph(args)
   end
@@ -275,11 +341,27 @@ defmodule ScenicMcp.Tools do
           # Phase 1 Semantic Registration Format
           # ETS stores: {{scene_name, entry_id}, %Entry{}}
           # where Entry has: id, type, clickable, screen_bounds, local_bounds, etc.
+          #
+          # Alternative format (some Scenic versions):
+          # {graph_key, %{elements: %{}, by_type: %{}, ...}}
 
-          all_entries = :ets.tab2list(semantic_table)
-            |> Enum.map(fn {{scene_name, _entry_id}, entry} ->
-              # entry is a %Scenic.Semantic.Compiler.Entry{} struct
-              {entry.id, entry, scene_name}
+          raw_entries = :ets.tab2list(semantic_table)
+
+          all_entries = raw_entries
+            |> Enum.flat_map(fn
+              # Standard Phase 1 format: {{scene_name, entry_id}, entry_struct}
+              {{scene_name, _entry_id}, entry} when is_map(entry) and is_map_key(entry, :id) ->
+                [{entry.id, entry, scene_name}]
+
+              # Alternative format: {graph_key, %{elements: %{id => entry}, ...}}
+              {graph_key, %{elements: elements}} when is_map(elements) ->
+                Enum.map(elements, fn {id, entry} ->
+                  {id, entry, graph_key}
+                end)
+
+              # Fallback: skip unknown formats
+              _other ->
+                []
             end)
 
           # Group by ID (in case multiple scenes have same ID)
@@ -774,7 +856,42 @@ defmodule ScenicMcp.Tools do
       "f10" -> :key_f10
       "f11" -> :key_f11
       "f12" -> :key_f12
+      "shift" -> :key_leftshift
+      "leftshift" -> :key_leftshift
+      "rightshift" -> :key_rightshift
+      "ctrl" -> :key_leftctrl
+      "leftctrl" -> :key_leftctrl
+      "rightctrl" -> :key_rightctrl
+      "alt" -> :key_leftalt
+      "leftalt" -> :key_leftalt
+      "rightalt" -> :key_rightalt
       other -> String.to_atom("key_" <> other)
+    end
+  end
+
+  @doc """
+  Send a key press event (without release).
+
+  This is useful for holding modifier keys like shift while performing other actions.
+  """
+  @spec handle_key_press(map()) :: {:ok, map()} | {:error, String.t()}
+  def handle_key_press(%{"key" => key}) do
+    with {:ok, driver_struct} <- driver_state() do
+      key_atom = normalize_key(key)
+      Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 1, []}})
+      {:ok, %{status: "ok", message: "Key pressed: #{key}"}}
+    end
+  end
+
+  @doc """
+  Send a key release event.
+  """
+  @spec handle_key_release(map()) :: {:ok, map()} | {:error, String.t()}
+  def handle_key_release(%{"key" => key}) do
+    with {:ok, driver_struct} <- driver_state() do
+      key_atom = normalize_key(key)
+      Scenic.Driver.send_input(driver_struct, {:key, {key_atom, 0, []}})
+      {:ok, %{status: "ok", message: "Key released: #{key}"}}
     end
   end
 
@@ -1123,15 +1240,20 @@ defmodule ScenicMcp.Tools do
   defp maybe_filter_by_id(elements, filter) when is_binary(filter) do
     # Try to match the filter against the element key
     # Support both ":atom_name" and "atom_name" formats
-    filter_atom =
-      filter
-      |> String.trim_leading(":")
-      |> String.to_atom()
+    filter_clean = String.trim_leading(filter, ":")
+    filter_atom = String.to_atom(filter_clean)
 
+    # Use exact matching - the key must equal the filter atom
+    # or the stringified key must equal the filter string
+    # Handle tuple IDs like {:hypercard, uuid} by converting to string
     Enum.filter(elements, fn {key, _data} ->
-      key == filter_atom or inspect(key) =~ filter
+      key == filter_atom or key_to_string(key) == filter_clean
     end)
   end
+
+  defp key_to_string(key) when is_atom(key), do: Atom.to_string(key)
+  defp key_to_string(key) when is_tuple(key), do: inspect(key)
+  defp key_to_string(key), do: to_string(key)
 
   defp maybe_filter_by_id(elements, _), do: elements
 

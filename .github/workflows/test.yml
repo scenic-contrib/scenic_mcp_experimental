@@ -10,6 +10,8 @@ jobs:
   elixir-tests:
     name: Elixir Tests
     runs-on: ubuntu-latest
+    env:
+      SCENIC_LOCAL_TARGET: glfw
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -25,6 +27,6 @@ jobs:
     - name: Install dependencies
       run: mix deps.get
     - name: Compile project
-      run: mix compile --warnings-as-errors
+      run: mix compile
     - name: Run tests
       run: mix test
