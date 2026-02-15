@@ -120,19 +120,13 @@ export function getToolDefinitions() {
     },
     {
       name: 'take_screenshot',
-      description: 'VISUAL DOCUMENTATION: Capture screenshots of the Scenic application for development progress tracking, debugging UI issues, creating before/after comparisons, and documenting visual changes. Essential for visual development workflows. Use when someone wants to "see how the app looks" or "capture current state".',
+      description: 'VISUAL DOCUMENTATION: Capture screenshots of the Scenic application for development progress tracking, debugging UI issues, creating before/after comparisons, and documenting visual changes. Essential for visual development workflows. Use when someone wants to "see how the app looks" or "capture current state". IMPORTANT: Always provide an explicit filename path (e.g., "/tmp/screenshot.png") for reliable operation.',
       inputSchema: {
         type: 'object',
         properties: {
-          format: {
-            type: 'string',
-            enum: ['path', 'base64'],
-            description: 'Output format - return file path or base64-encoded image data (default: path)',
-            default: 'path',
-          },
           filename: {
             type: 'string',
-            description: 'Optional filename (will be auto-generated if not provided)',
+            description: 'File path where screenshot will be saved (e.g., "/tmp/screenshot.png"). Always provide this for reliable operation.',
           },
         },
       },
@@ -597,11 +591,23 @@ async function handleTakeScreenshot(args: any) {
       };
     }
 
-    const { format = 'path', filename } = args;
+    const { filename } = args;
+
+    if (!filename) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Error: Please provide a filename path (e.g., "/tmp/screenshot.png") for reliable screenshot capture.',
+          },
+        ],
+        isError: true,
+      };
+    }
 
     const command = {
       action: 'take_screenshot',
-      format,
+      format: 'path',
       filename,
     };
 
@@ -620,30 +626,14 @@ async function handleTakeScreenshot(args: any) {
       };
     }
 
-    if (format === 'base64' && data.data) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Screenshot captured successfully!\nFormat: base64\nSize: ${data.size} bytes\nPath: ${data.path}`,
-          },
-          {
-            type: 'image',
-            data: data.data,
-            mimeType: 'image/png',
-          },
-        ],
-      };
-    } else {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Screenshot saved to: ${data.path}`,
-          },
-        ],
-      };
-    }
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Screenshot saved to: ${data.path}`,
+        },
+      ],
+    };
   } catch (error) {
     return {
       content: [
