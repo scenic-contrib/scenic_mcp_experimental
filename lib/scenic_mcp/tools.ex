@@ -57,6 +57,21 @@ defmodule ScenicMcp.Tools do
   end
 
   @doc """
+  Get the ViewPort struct via `Scenic.ViewPort.info/1`.
+
+  Returns the full `%Scenic.ViewPort{}` struct needed by the Semantic API.
+  """
+  @spec viewport_info() :: {:ok, Scenic.ViewPort.t()} | {:error, String.t()}
+  def viewport_info do
+    viewport_name = ScenicMcp.Config.viewport_name()
+
+    case Scenic.ViewPort.info(viewport_name) do
+      {:ok, viewport} -> {:ok, viewport}
+      _ -> {:error, "Could not get ViewPort info for :#{viewport_name}"}
+    end
+  end
+
+  @doc """
   Get the PID of the configured driver process.
 
   Returns `{:ok, pid}` if found, or `{:error, reason}` if not found.
@@ -450,35 +465,21 @@ defmodule ScenicMcp.Tools do
   """
   @spec click_element(map()) :: {:ok, map()} | {:error, String.t()}
   def click_element(%{"element_id" => element_id}) when is_binary(element_id) do
-    with {:ok, result} <- find_clickable_elements(%{"filter" => element_id}),
-         element <- List.first(result.elements) do
-      if element do
-        # Handle both atom and string keys (after sanitization)
-        center = get_in_sanitized(element, [:center]) || get_in_sanitized(element, ["center"])
-
-        case center do
-          %{"x" => x, "y" => y} when is_number(x) and is_number(y) ->
-            # Click at the element's center
-            case handle_mouse_click(%{"x" => x, "y" => y}) do
-              {:ok, _click_result} ->
-                {:ok,
-                 %{
-                   status: "ok",
-                   message: "Clicked element #{element_id}",
-                   element: element,
-                   clicked_at: %{x: x, y: y}
-                 }}
-
-              {:error, reason} ->
-                {:error, "Failed to click element: #{reason}"}
-            end
-
-          _ ->
-            {:error, "Element found but has no valid center coordinates: #{inspect(center)}"}
-        end
-      else
-        {:error, "Element '#{element_id}' not found or not clickable"}
-      end
+    # Uses SSM screen_bounds (full transform chain) for accurate coordinates.
+    # Routes through driver for full integration testing of the input pipeline.
+    with {:ok, viewport} <- viewport_info(),
+         atom_id <- normalize_element_id(element_id),
+         {:ok, {x, y}} <- Scenic.ViewPort.Semantic.click_element(viewport, atom_id) do
+      {:ok,
+       %{
+         status: "ok",
+         message: "Clicked element #{element_id}",
+         clicked_at: %{x: x, y: y}
+       }}
+    else
+      {:error, :not_found} -> {:error, "Element '#{element_id}' not found"}
+      {:error, :semantic_disabled} -> {:error, "Semantic system not enabled on viewport"}
+      {:error, reason} -> {:error, "Failed to click element: #{inspect(reason)}"}
     end
   end
 
@@ -499,34 +500,21 @@ defmodule ScenicMcp.Tools do
   """
   @spec hover_element(map()) :: {:ok, map()} | {:error, String.t()}
   def hover_element(%{"element_id" => element_id}) when is_binary(element_id) do
-    with {:ok, result} <- find_clickable_elements(%{"filter" => element_id}),
-         element <- List.first(result.elements) do
-      if element do
-        # Handle both atom and string keys (after sanitization)
-        center = get_in_sanitized(element, [:center]) || get_in_sanitized(element, ["center"])
-
-        case center do
-          %{"x" => x, "y" => y} when is_number(x) and is_number(y) ->
-            case handle_mouse_move(%{"x" => x, "y" => y}) do
-              {:ok, _move_result} ->
-                {:ok,
-                 %{
-                   status: "ok",
-                   message: "Hovering over element #{element_id}",
-                   element: element,
-                   position: %{x: x, y: y}
-                 }}
-
-              {:error, reason} ->
-                {:error, "Failed to move mouse to element: #{reason}"}
-            end
-
-          _ ->
-            {:error, "Element found but has no valid center coordinates: #{inspect(center)}"}
-        end
-      else
-        {:error, "Element '#{element_id}' not found"}
-      end
+    # Uses SSM screen_bounds for accurate hover positioning.
+    # Routes through driver so cursor_enter/leave fires via SSM hover tracking.
+    with {:ok, viewport} <- viewport_info(),
+         atom_id <- normalize_element_id(element_id),
+         {:ok, {x, y}} <- Scenic.ViewPort.Semantic.hover_element(viewport, atom_id) do
+      {:ok,
+       %{
+         status: "ok",
+         message: "Hovering over element #{element_id}",
+         position: %{x: x, y: y}
+       }}
+    else
+      {:error, :not_found} -> {:error, "Element '#{element_id}' not found"}
+      {:error, :semantic_disabled} -> {:error, "Semantic system not enabled on viewport"}
+      {:error, reason} -> {:error, "Failed to hover element: #{inspect(reason)}"}
     end
   end
 
@@ -1234,6 +1222,22 @@ defmodule ScenicMcp.Tools do
   defp extract_translate_from_matrix({dx, dy}), do: {dx, dy}
   defp extract_translate_from_matrix([1, 0, 0, 1, dx, dy]), do: {dx, dy}
   defp extract_translate_from_matrix(_), do: {0, 0}
+
+  # Convert MCP string element_id to the term used as ETS key.
+  # Handles ":atom_name", "atom_name", and tuple IDs like "{:list_item, 0}".
+  defp normalize_element_id(element_id) when is_binary(element_id) do
+    # Try parsing as Elixir term first (handles tuples like "{:list_item, 0}")
+    case Code.string_to_quoted(element_id) do
+      {:ok, term} when is_tuple(term) -> term
+      _ -> safe_to_atom(String.trim_leading(element_id, ":"))
+    end
+  end
+
+  defp safe_to_atom(str) do
+    String.to_existing_atom(str)
+  rescue
+    ArgumentError -> String.to_atom(str)
+  end
 
   defp maybe_filter_by_id(elements, nil), do: elements
 
