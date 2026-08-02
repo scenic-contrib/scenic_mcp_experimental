@@ -15,7 +15,12 @@ let lastConnectionCheck = 0;
 let lastSuccessfulCommand = 0;
 const CONNECTION_CACHE_TTL = 2000;
 const COMMAND_SUCCESS_TTL = 10000;
-let currentPort = 9999;
+const envPort = process.env.SCENIC_MCP_PORT;
+if (!envPort) {
+  console.error('[Scenic MCP] SCENIC_MCP_PORT environment variable is required. Set it in your project\'s .mcp.json env config.');
+  process.exit(1);
+}
+let currentPort = parseInt(envPort, 10);
 
 // ========================================================================
 // Persistent Connection Management
@@ -115,7 +120,7 @@ async function sendToElixir(command: any, retries = 3): Promise<string> {
   throw new Error('Failed to send command after retries');
 }
 
-async function checkTCPServer(port: number = 9999, useCache: boolean = true): Promise<boolean> {
+async function checkTCPServer(port: number = currentPort, useCache: boolean = true): Promise<boolean> {
   const now = Date.now();
 
   if (useCache && now - lastSuccessfulCommand < COMMAND_SUCCESS_TTL) {
@@ -139,7 +144,7 @@ async function checkTCPServer(port: number = 9999, useCache: boolean = true): Pr
   return isConnected;
 }
 
-async function performTCPCheck(port: number = 9999): Promise<boolean> {
+async function performTCPCheck(port: number = currentPort): Promise<boolean> {
   if (persistentConnection && !persistentConnection.destroyed) {
     return true;
   }

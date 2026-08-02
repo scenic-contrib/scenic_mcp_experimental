@@ -22,16 +22,10 @@ export function getToolDefinitions() {
   return [
     {
       name: 'connect_scenic',
-      description: 'CONNECTION SETUP: Establish the connection to the ScenicMCP GenServer running inside our Scenic app. Use this first before other interaction tools.',
+      description: 'CONNECTION SETUP: Establish the connection to the ScenicMCP GenServer running inside our Scenic app. Use this first before other interaction tools. The TCP port is pre-configured via SCENIC_MCP_PORT env var. Do NOT guess the port. If connection fails, look up the correct port in the Elixir config: check config/runtime.exs, config/dev.exs, or config/config.exs in the current project for `config :scenic_mcp, port: <number>`. Then check .mcp.json to ensure the SCENIC_MCP_PORT env var matches.',
       inputSchema: {
         type: 'object',
-        properties: {
-          port: {
-            type: 'number',
-            description: 'TCP port (default: 9999)',
-            default: 9999,
-          },
-        },
+        properties: {},
       },
     },
     {
@@ -212,9 +206,7 @@ export async function handleToolCall(name: string, args: any) {
 
 async function handleConnectScenic(args: any) {
   try {
-    const { port = 9999 } = args;
-
-    conn.setCurrentPort(port);
+    const port = conn.getCurrentPort();
     const isRunning = await conn.checkTCPServer(port);
 
     if (!isRunning) {
