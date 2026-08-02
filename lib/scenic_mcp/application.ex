@@ -3,14 +3,11 @@ defmodule ScenicMcp.Application do
   use Application
   require Logger
 
-  @default_port 9999
-
   @impl true
   def start(_type, _args) do
     Logger.info("Starting ScenicMCP Application...")
 
-    # config is declared inside the app we want to use ScenicMCP with
-    port = Application.get_env(:scenic_mcp, :port, @default_port)
+    port = ScenicMcp.Config.port()
     app_name = Application.get_env(:scenic_mcp, :app_name, "Unknown")
     children = [{ScenicMcp.Server, port: port, app_name: app_name}]
 

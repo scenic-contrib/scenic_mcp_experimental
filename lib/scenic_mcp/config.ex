@@ -2,17 +2,16 @@ defmodule ScenicMcp.Config do
   @moduledoc """
   Configuration management for Scenic MCP.
 
-  Provides centralized access to configuration values with sensible defaults.
-  Configuration can be set in your app's config.exs:
+  Configuration MUST be set in your app's config.exs or runtime.exs:
 
       config :scenic_mcp,
-        port: 9999,
+        port: 9992,
         viewport_name: :main_viewport,
         driver_name: :scenic_driver
 
   ## Configuration Options
 
-  - `:port` - TCP port for the MCP server (default: 9999)
+  - `:port` - TCP port for the MCP server (REQUIRED — no default, fails loudly if missing)
   - `:viewport_name` - Registered name of the Scenic viewport process (default: :main_viewport)
   - `:driver_name` - Registered name of the Scenic driver process (default: :scenic_driver)
   - `:app_name` - Human-readable name of your application (default: "Unknown")
@@ -23,7 +22,25 @@ defmodule ScenicMcp.Config do
   """
   @spec port() :: pos_integer()
   def port do
-    Application.get_env(:scenic_mcp, :port, 9999)
+    case Application.get_env(:scenic_mcp, :port) do
+      nil ->
+        raise """
+        ScenicMcp port not configured!
+
+        Set it in your project's config:
+
+            config :scenic_mcp, port: 9992
+
+        Or in config/runtime.exs via environment variable:
+
+            if port = System.get_env("SCENIC_MCP_PORT") do
+              config :scenic_mcp, port: String.to_integer(port)
+            end
+        """
+
+      port ->
+        port
+    end
   end
 
   @doc """

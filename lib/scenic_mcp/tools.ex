@@ -819,7 +819,11 @@ defmodule ScenicMcp.Tools do
   defp normalize_key(key) do
     case String.downcase(key) do
       "enter" -> :key_enter
-      "escape" -> :key_escape
+      # :key_esc, NOT :key_escape. scenic_driver_local maps X11 keysym 0xFF1B
+      # to :key_esc, so :key_escape is an atom no real keyboard ever produces.
+      # Sending it meant Escape-driven tests passed against components that
+      # matched the wrong atom, while Escape did nothing for actual users.
+      "escape" -> :key_esc
       "tab" -> :key_tab
       "backspace" -> :key_backspace
       "delete" -> :key_delete
