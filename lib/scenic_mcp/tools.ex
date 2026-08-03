@@ -162,6 +162,33 @@ defmodule ScenicMcp.Tools do
     end
   end
 
+  @doc """
+  Send a single codepoint with explicit modifiers.
+
+  `send_keys(text:)` always sends `{:codepoint, {char, []}}`, and `send_keys(key:)`
+  sends `:key` events, which never insert text. Neither can reproduce what a real
+  keyboard does for a shifted character: GLFW reports Shift+a as
+  `{:codepoint, {"A", [:shift]}}` — the character already uppercased, WITH the
+  modifier still attached.
+
+  That gap hid a live bug. TextField dropped any codepoint carrying modifiers, so
+  every capital and every shifted symbol was silently discarded, while the whole
+  spex suite stayed green because it only ever sent empty modifier lists.
+  """
+  @spec handle_send_codepoint(map()) :: {:ok, map()} | {:error, String.t()}
+  def handle_send_codepoint(%{"char" => char} = params) when is_binary(char) do
+    mods = parse_modifiers(Map.get(params, "modifiers", []))
+
+    with {:ok, driver_struct} <- driver_state() do
+      Scenic.Driver.send_input(driver_struct, {:codepoint, {char, mods}})
+      {:ok, %{status: "ok", message: "Codepoint sent: #{char} mods=#{inspect(mods)}"}}
+    end
+  end
+
+  def handle_send_codepoint(_params) do
+    {:error, "Invalid parameters: must provide a 'char'"}
+  end
+
   def handle_send_keys(%{"key" => key} = params) when is_binary(key) do
     with {:ok, driver_struct} <- driver_state() do
       modifiers = parse_modifiers(Map.get(params, "modifiers", []))

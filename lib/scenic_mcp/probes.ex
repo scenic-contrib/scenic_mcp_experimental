@@ -45,6 +45,27 @@ defmodule ScenicMcp.Probes do
   end
 
   @doc """
+  Send one character as a codepoint with explicit modifiers, the way a real
+  keyboard does.
+
+  `send_text/1` sends every character with NO modifiers, so it cannot reproduce
+  a shifted keystroke — GLFW reports Shift+a as `{"A", [:shift]}`, the character
+  already uppercased but the modifier still attached. Use this to exercise
+  capitals and shifted symbols honestly.
+
+      Probes.send_codepoint("A", [:shift])
+      Probes.send_codepoint("!", [:shift])
+  """
+  def send_codepoint(char, modifiers \\ []) when is_binary(char) and is_list(modifiers) do
+    params = %{"char" => char, "modifiers" => Enum.map(modifiers, &to_string/1)}
+
+    case ScenicMcp.Tools.handle_send_codepoint(params) do
+      {:ok, _result} -> :ok
+      {:error, reason} -> raise "Failed to send codepoint: #{reason}"
+    end
+  end
+
+  @doc """
   Click at specific coordinates.
 
   Example:
