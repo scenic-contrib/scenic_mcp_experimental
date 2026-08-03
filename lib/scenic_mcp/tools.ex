@@ -1230,11 +1230,41 @@ defmodule ScenicMcp.Tools do
   # Convert MCP string element_id to the term used as ETS key.
   # Handles ":atom_name", "atom_name", and tuple IDs like "{:list_item, 0}".
   defp normalize_element_id(element_id) when is_binary(element_id) do
-    # Try parsing as Elixir term first (handles tuples like "{:list_item, 0}")
-    case Code.string_to_quoted(element_id) do
-      {:ok, term} when is_tuple(term) -> term
-      _ -> safe_to_atom(String.trim_leading(element_id, ":"))
+    # Element ids come in three shapes and all must survive intact:
+    #
+    #   "{:list_item, 0}"          -> literal tuple
+    #   ":icon_menu_file"          -> atom (explicitly requested)
+    #   "tab_bar_close_<uuid>"     -> STRING, left as-is
+    #
+    # Do NOT coerce a bare string to an atom. Components that derive ids from
+    # runtime data (buffer UUIDs, row keys) register STRING keys, precisely so
+    # unbounded external data never reaches the atom table. Coercing here made
+    # those elements unresolvable — the lookup searched for an atom that no
+    # index contains. Scenic's lookup accepts either shape, so pass it through.
+    #
+    # Also note Code.string_to_quoted/1 does not fail on a bare identifier: it
+    # returns a variable AST node, {:name, meta, nil}, which is itself a tuple.
+    # Guarding only on is_tuple/1 matched every plain id and returned the AST.
+    cond do
+      # ":name" is an explicit atom request.
+      String.starts_with?(element_id, ":") ->
+        safe_to_atom(String.trim_leading(element_id, ":"))
+
+      true ->
+        case Code.string_to_quoted(element_id) do
+          {:ok, term} when is_tuple(term) and not is_nil(term) ->
+            if ast_node?(term), do: element_id, else: term
+
+          _ ->
+            element_id
+        end
     end
+  end
+
+  # {name, meta, context} — the shape Code.string_to_quoted/1 returns for a
+  # bare identifier, as opposed to a literal tuple the caller actually meant.
+  defp ast_node?(term) do
+    tuple_size(term) == 3 and is_atom(elem(term, 0)) and is_list(elem(term, 1))
   end
 
   defp safe_to_atom(str) do
